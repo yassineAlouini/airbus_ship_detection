@@ -4,6 +4,8 @@
 
 from keras import layers, models
 
+from asd.conf import IMG_SCALING
+
 
 def _upsample_conv(filters, kernel_size, strides, padding):
     return layers.Conv2DTranspose(filters, kernel_size, strides=strides,

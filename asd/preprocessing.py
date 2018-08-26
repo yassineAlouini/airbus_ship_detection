@@ -79,8 +79,8 @@ def get_data(file_size_kb_threshold=FILE_SIZE_KB_THRESHOLD,
     balanced_train_df = (train_df.assign(ships_bucket=lambda df: (df["ships"] + 2) // 3)
                                  .groupby('ships_bucket')
                                  .apply(lambda x: x.sample(SAMPLES_PER_SHIPS_BUCKET,
-                                                           random_state=SEED=) if len(x) > SAMPLES_PER_SHIPS_BUCKET
-                                                           else x)
+                                                           random_state=SEED) if len(x) > SAMPLES_PER_SHIPS_BUCKET
+                                        else x))
     return balanced_train_df, valid_df
 
 
@@ -95,9 +95,9 @@ def rle_encode(img, min_threshold=1e-3, max_threshold=None):
         return ''  # no need to encode if it's all zeros
     if max_threshold and np.mean(img) > max_threshold:
         return ''  # ignore overfilled mask
-    pixels=img.T.flatten()
-    pixels=np.concatenate([[0], pixels, [0]])
-    runs=np.where(pixels[1:] != pixels[:-1])[0] + 1
+    pixels = img.T.flatten()
+    pixels = np.concatenate([[0], pixels, [0]])
+    runs = np.where(pixels[1:] != pixels[:-1])[0] + 1
     runs[1::2] -= runs[::2]
     return ' '.join(str(x) for x in runs)
 
@@ -109,20 +109,20 @@ def rle_decode(mask_rle, shape=(768, 768)):
     shape: (height,width) of array to return
     Returns numpy array, 1 - mask, 0 - background
     '''
-    s=mask_rle.split()
-    starts, lengths=[np.asarray(x, dtype=int) for x in (s[0:][::2], s[1:][::2])]
+    s = mask_rle.split()
+    starts, lengths = [np.asarray(x, dtype=int) for x in (s[0:][::2], s[1:][::2])]
     starts -= 1
-    ends=starts + lengths
-    img=np.zeros(shape[0] * shape[1], dtype=np.uint8)
+    ends = starts + lengths
+    img = np.zeros(shape[0] * shape[1], dtype=np.uint8)
     for low, high in zip(starts, ends):
-        img[low:high]=1
+        img[low:high] = 1
     return img.reshape(shape).T  # Needed to align to RLE direction
 
 
 def masks_as_image(in_mask_list):
     # Take the individual ship masks and create a single mask array for all ships
     # TODO: This mask size shouldn't be hardcoded (768, 768).
-    all_masks=np.zeros((768, 768), dtype=np.uint8)
+    all_masks = np.zeros((768, 768), dtype=np.uint8)
     for mask in in_mask_list:
         if isinstance(mask, str):
             all_masks |= rle_decode(mask)
@@ -132,7 +132,7 @@ def masks_as_image(in_mask_list):
 def masks_as_color(in_mask_list):
     # Take the individual ship masks and create a color mask array for each ships
     # TODO: This mask size shouldn't be hardcoded (768, 768).
-    all_masks=np.zeros((768, 768), dtype=np.float)
+    all_masks = np.zeros((768, 768), dtype=np.float)
 
     def scale(x): return (len(in_mask_list) + x + 1) / (len(in_mask_list) * 2)  # scale the heatmap image to shift
     for i, mask in enumerate(in_mask_list):
@@ -144,25 +144,25 @@ def masks_as_color(in_mask_list):
 
 
 def make_image_gen(input_df, batch_size, img_scaling):
-    df=input_df.copy()
-    all_batches=list(df.groupby('ImageId'))
-    out_rgb=[]
-    out_mask=[]
+    df = input_df.copy()
+    all_batches = list(df.groupby('ImageId'))
+    out_rgb = []
+    out_mask = []
     while True:
         np.random.shuffle(all_batches)
         for c_img_id, c_masks in all_batches:
-            rgb_path=os.path.join(TRAIN_IMAGES_FOLDER, c_img_id)
-            c_img=imread(rgb_path)
-            c_mask=masks_as_image(c_masks['EncodedPixels'].values)
-            c_mask=np.expand_dims(c_mask, axis=-1)
+            rgb_path = os.path.join(TRAIN_IMAGES_FOLDER, c_img_id)
+            c_img = imread(rgb_path)
+            c_mask = masks_as_image(c_masks['EncodedPixels'].values)
+            c_mask = np.expand_dims(c_mask, axis=-1)
             if img_scaling is not None:
-                c_img=c_img[::img_scaling[0], ::img_scaling[1]]
-                c_mask=c_mask[::img_scaling[0], ::img_scaling[1]]
+                c_img = c_img[::img_scaling[0], ::img_scaling[1]]
+                c_mask = c_mask[::img_scaling[0], ::img_scaling[1]]
             out_rgb += [c_img]
             out_mask += [c_mask]
             if len(out_rgb) >= batch_size:
                 yield np.stack(out_rgb, 0) / 255.0, np.stack(out_mask, 0)
-                out_rgb, out_mask=[], []
+                out_rgb, out_mask = [], []
 
 # TODO: Add some documentation for the augmentation pipeline as well.
 # TODO: Finish this and add some documentation.
@@ -174,7 +174,7 @@ def build_image_generator(augment_brightness):
     https://keras.io/preprocessing/image/.
     """
     # TODO: Describe what each data augementation parameter does.
-    data_generator_dict=dict(featurewise_center=False,
+    data_generator_dict = dict(featurewise_center=False,
                                samplewise_center=False,
                                rotation_range=45,
                                width_shift_range=0.1,
@@ -187,28 +187,28 @@ def build_image_generator(augment_brightness):
                                data_format='channels_last')
     # brightness can be problematic since it seems to change the labels differently from the images
     if augment_brightness:
-        data_generator_dict['brightness_range']=[0.5, 1.5]
-    image_gen=ImageDataGenerator(**data_generator_dict)
+        data_generator_dict['brightness_range'] = [0.5, 1.5]
+    image_gen = ImageDataGenerator(**data_generator_dict)
 
     if augment_brightness:
         data_generator_dict.pop('brightness_range')
-    label_gen=ImageDataGenerator(**data_generator_dict)
+    label_gen = ImageDataGenerator(**data_generator_dict)
     return image_gen, label_gen
 
 # TODO: Add some documentation and improve variables names.
 
 
 def create_aug_gen(in_gen, augment_brightness, seed=None):
-    image_gen, label_gen=build_image_generator(augment_brightness)
+    image_gen, label_gen = build_image_generator(augment_brightness)
     np.random.seed(seed if seed is not None else np.random.choice(range(9999)))
     for in_x, in_y in in_gen:
-        seed=np.random.choice(range(9999))
+        seed = np.random.choice(range(9999))
         # keep the seeds syncronized otherwise the augmentation to the images is different from the masks
-        g_x=image_gen.flow(255 * in_x,
+        g_x = image_gen.flow(255 * in_x,
                              batch_size=in_x.shape[0],
                              seed=seed,
                              shuffle=True)
-        g_y=label_gen.flow(in_y,
+        g_y = label_gen.flow(in_y,
                              batch_size=in_x.shape[0],
                              seed=seed,
                              shuffle=True)
@@ -217,7 +217,7 @@ def create_aug_gen(in_gen, augment_brightness, seed=None):
 
 
 if __name__ == "__main__":
-    train_df, valid_df=get_data()
+    train_df, valid_df = get_data()
     print(train_df.head())
     print(train_df.shape)
     print(valid_df.head())

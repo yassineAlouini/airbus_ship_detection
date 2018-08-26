@@ -4,8 +4,8 @@ from asd.callbacks import CALLBACKS
 from asd.conf import (EDGE_CROP, IMG_SCALING, IMG_SIZE, MAX_TRAIN_EPOCHS,
                       MAX_TRAIN_STEPS, NET_SCALING, VALID_IMG_COUNT)
 from asd.losses_metrics import METRICS, custom_dice_loss
-from asd.models import build_u_net_model
-from asd.preprocessing import get_data
+from asd.models.u_net import build_u_net_model
+from asd.preprocessing import create_aug_gen, get_data, make_image_gen
 
 # TODO: Add some documentation
 
@@ -45,10 +45,10 @@ def ml_pipeline(input_train_df, input_valid_df, hyperparameters, n_samples, inpu
     history = model.fit_generator(augmented_img_generator, steps_per_epoch=steps_per_epoch,
                                   epochs=max_train_epochs, validation_data=(valid_x, valid_y),
                                   callbacks=CALLBACKS, workers=1)
-    return {"history": history.history, "model": model}
+    return {"history": history.history, "model": model}
 
 
-if __main__ == "__name__":
+if __name__ == "__main__":
     train_df, valid_df = get_data()
     n_samples = train_df.shape[0]
     input_shape = IMG_SIZE
@@ -65,4 +65,4 @@ if __main__ == "__name__":
                        'edge_crop': EDGE_CROP,
                        'net_scaling': NET_SCALING}
     pipeline_dict = ml_pipeline(train_df, valid_df, hyperparameters, n_samples, input_shape)
-    print(pipeline["history"])
+    print(pipeline_dict["history"])
