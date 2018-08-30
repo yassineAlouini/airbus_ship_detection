@@ -1,3 +1,4 @@
+from keras import layers, models
 from keras.optimizers import Adam
 
 from asd.callbacks import CALLBACKS
@@ -46,6 +47,21 @@ def ml_pipeline(input_train_df, input_valid_df, hyperparameters, n_samples, inpu
                                   epochs=max_train_epochs, validation_data=(valid_x, valid_y),
                                   callbacks=CALLBACKS, workers=1)
     return {"history": history.history, "model": model}
+
+
+def make_predictions(model_path):
+    """ Load the best trained models and predict the masks for the test images.
+    """
+    model = models.load_model(model_path)
+    seg_in_shape = model.get_input_shape_at(0)[1:3]
+    seg_out_shape = model.get_output_shape_at(0)[1:3]
+    print(seg_in_shape, '->', seg_out_shape)
+    c_path = os.path.join(test_image_dir, c_img_name)
+    c_img = imread(c_path)
+    first_img = np.expand_dims(c_img, 0) / 255.0
+    predictions = model.predict(first_img)
+    # Encode
+    return predictions
 
 
 if __name__ == "__main__":

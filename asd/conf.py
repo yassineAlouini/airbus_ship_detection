@@ -8,7 +8,7 @@ from hyperopt import hp
 BASE_DATA_PATH = os.path.dirname(os.path.realpath(__file__))
 MASKS_DATA_PATH = os.path.join(BASE_DATA_PATH, 'data', 'train_ship_segmentations.csv')
 TRAIN_IMAGES_FOLDER = os.path.join(BASE_DATA_PATH, 'data', 'train')
-TEST_IMAGES_FOLDER = os.path.join(BASE_DATA_PATH, 'test')
+TEST_IMAGES_FOLDER = os.path.join(BASE_DATA_PATH, 'data', 'test')
 VALID_SIZE = 0.2
 FILE_SIZE_KB_THRESHOLD = 50
 # For reproducibility

@@ -1,12 +1,12 @@
 """ Model callbacks setup.
 """
 
+from kaggle_tools.metrics.keras import FbetaMetricCallback
 from keras.callbacks import EarlyStopping, ModelCheckpoint, ReduceLROnPlateau
 
 from asd.conf import EARLY_STOPPING_PATIENCE, REDUCE_LR_PATIENCE
 
 # TODO: Add some documentation for these callbacks.
-# TODO: Import the FbetaMetricCallback from kaggle_tools package.
 
 weight_path = "best_weights.h5"
 
@@ -22,5 +22,7 @@ REDUCE_LR_CALLBACK = ReduceLROnPlateau(monitor='val_loss', factor=0.2,
 EARLY_STOPPING_CALLBACK = EarlyStopping(monitor="val_loss", mode="min", verbose=2,
                                         patience=EARLY_STOPPING_PATIENCE)
 
+
+F2_METRIC_CALLBACK = FbetaMetricCallback(beta=2)
 # TODO: Add the FbetaMetricCallback
-CALLBACKS = [MODEL_CHECKPOINT_CALLABACK, EARLY_STOPPING_CALLBACK, REDUCE_LR_CALLBACK]
+CALLBACKS = [MODEL_CHECKPOINT_CALLABACK, EARLY_STOPPING_CALLBACK, REDUCE_LR_CALLBACK, F2_METRIC_CALLBACK]
