@@ -9,6 +9,7 @@ BASE_DATA_PATH = os.path.dirname(os.path.realpath(__file__))
 MASKS_DATA_PATH = os.path.join(BASE_DATA_PATH, 'data', 'train_ship_segmentations.csv')
 TRAIN_IMAGES_FOLDER = os.path.join(BASE_DATA_PATH, 'data', 'train')
 TEST_IMAGES_FOLDER = os.path.join(BASE_DATA_PATH, 'data', 'test')
+BEST_MODEL_PATH = os.path.join(BASE_DATA_PATH, 'data', 'best_weights.h5')
 VALID_SIZE = 0.2
 FILE_SIZE_KB_THRESHOLD = 50
 # For reproducibility
