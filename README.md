@@ -17,3 +17,5 @@ It is thus necessary to account for this imbalance in order to get good performa
 # Resources
 
 * https://www.kaggle.com/c/data-science-bowl-2018/discussion/54741 => a great post about advanced instance segmentation tricks. This is the winning solution for the data bowl 2018 challenge. 
+
+* https://github.com/ZFTurbo/ZF_UNET_224_Pretrained_Model => Unet-like model with pretrained weights. To try later. 
