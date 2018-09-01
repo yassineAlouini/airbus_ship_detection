@@ -9,7 +9,8 @@ BASE_DATA_PATH = os.path.dirname(os.path.realpath(__file__))
 MASKS_DATA_PATH = os.path.join(BASE_DATA_PATH, 'data', 'train_ship_segmentations.csv')
 TRAIN_IMAGES_FOLDER = os.path.join(BASE_DATA_PATH, 'data', 'train')
 TEST_IMAGES_FOLDER = os.path.join(BASE_DATA_PATH, 'data', 'test')
-BEST_MODEL_PATH = os.path.join(BASE_DATA_PATH, 'data', 'best_weights.h5')
+BEST_MODEL_WEIGHTS_PATH = os.path.join(BASE_DATA_PATH, 'data', 'best_weights.h5')
+BEST_MODEL_PATH = os.path.join(BASE_DATA_PATH, 'data', 'best_model.h5')
 VALID_SIZE = 0.2
 FILE_SIZE_KB_THRESHOLD = 50
 # For reproducibility
@@ -42,8 +43,8 @@ TEST_IMGS_TO_IGNORE = ['13703f040.jpg',
                        'ef87bad36.jpg',
                        'f083256d8.jpg']
 # These two patiences thresholds are small so that this notebook can run with limited resources
-REDUCE_LR_PATIENCE = 2
-EARLY_STOPPING_PATIENCE = 2
+REDUCE_LR_PATIENCE = 30
+EARLY_STOPPING_PATIENCE = 30
 # Fraction of the validation size (compared to the total train size)
 VALID_SIZE = 0.3
 # Minimum size (in KB) of files to keep
@@ -57,11 +58,9 @@ IMG_SCALING = (4, 4)
 EDGE_CROP = 16
 # downsampling inside the network
 NET_SCALING = (1, 1)
-# number of validation images to use
-VALID_IMG_COUNT = 600
 # maximum number of steps_per_epoch in training
 MAX_TRAIN_STEPS = 150
-MAX_TRAIN_EPOCHS = 10
+MAX_TRAIN_EPOCHS = 100
 # The hyperparameters space over which to search.
 # TODO: Improve the ranges and the used distributions to sample.
 HYPERPARAMETERS_SPACE = {
@@ -72,7 +71,6 @@ HYPERPARAMETERS_SPACE = {
     'augment_brightness': hp.choice('augment_brightness', [True, False]),
     'max_train_steps': MAX_TRAIN_STEPS,
     'max_train_epochs': MAX_TRAIN_EPOCHS,
-    'valid_img_count': VALID_IMG_COUNT,
     'img_scaling': IMG_SCALING,
     'edge_crop': EDGE_CROP,
     'net_scaling': NET_SCALING

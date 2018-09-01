@@ -146,6 +146,7 @@ def masks_as_color(in_mask_list):
 def make_image_gen(input_df, batch_size, img_scaling):
     df = input_df.copy()
     all_batches = list(df.groupby('ImageId'))
+    print(len(all_batches))
     out_rgb = []
     out_mask = []
     while True:

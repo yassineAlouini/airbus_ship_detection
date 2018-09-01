@@ -24,5 +24,5 @@ EARLY_STOPPING_CALLBACK = EarlyStopping(monitor="val_loss", mode="min", verbose=
 
 
 F2_METRIC_CALLBACK = FBetaMetricCallback(beta=2)
-# TODO: Add the FbetaMetricCallback
-CALLBACKS = [MODEL_CHECKPOINT_CALLABACK, EARLY_STOPPING_CALLBACK, REDUCE_LR_CALLBACK, F2_METRIC_CALLBACK]
+# TODO: Add the FbetaMetricCallback => Added but doesn't yet work, check why (probably wrong input...)
+CALLBACKS = [MODEL_CHECKPOINT_CALLABACK, EARLY_STOPPING_CALLBACK, REDUCE_LR_CALLBACK]
