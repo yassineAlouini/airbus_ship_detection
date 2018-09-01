@@ -7,6 +7,7 @@ import numpy as np
 import pandas as pd
 from keras.preprocessing.image import ImageDataGenerator
 from skimage.io import imread
+from skimage.morphology import label
 from sklearn.model_selection import train_test_split
 
 from asd.conf import (FILE_SIZE_KB_THRESHOLD, MASKS_DATA_PATH,
@@ -106,7 +107,7 @@ def rle_encode(img, min_threshold=1e-3, max_threshold=None):
 def rle_decode(mask_rle, shape=(768, 768)):
     '''
     mask_rle: run-length as string formated (start length)
-    shape: (height,width) of array to return
+    shape: (height, width) of array to return
     Returns numpy array, 1 - mask, 0 - background
     '''
     s = mask_rle.split()
@@ -117,6 +118,11 @@ def rle_decode(mask_rle, shape=(768, 768)):
     for low, high in zip(starts, ends):
         img[low:high] = 1
     return img.reshape(shape).T  # Needed to align to RLE direction
+
+
+def multi_rle_encode(img):
+    labels = label(img[:, :, 0])
+    return [rle_encode(labels == k) for k in np.unique(labels[labels > 0])]
 
 
 def masks_as_image(in_mask_list):

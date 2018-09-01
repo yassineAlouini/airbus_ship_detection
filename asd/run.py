@@ -1,3 +1,4 @@
+import gc
 import glob
 import os
 
@@ -7,6 +8,7 @@ import pandas as pd
 from keras import models
 from keras.optimizers import Adam
 from skimage.io import imread
+from skimage.morphology import binary_opening, disk
 from tqdm import tqdm
 
 from asd.callbacks import CALLBACKS
@@ -17,7 +19,9 @@ from asd.losses_metrics import (METRICS, custom_dice_loss, dice_metric,
                                 true_positive_rate_metric)
 from asd.models.u_net import build_u_net_model
 from asd.preprocessing import (create_aug_gen, get_data, make_image_gen,
-                               rle_encode)
+                               multi_rle_encode)
+
+gc.enable()
 
 # TODO: Add some documentation
 
@@ -59,7 +63,34 @@ def ml_pipeline(input_train_df, input_valid_df, hyperparameters, n_samples, inpu
     return {"history": history.history, "model": model}
 
 
-def prepare_submission(model_path, output_path):
+def _predict_for_batch(img_paths, model, output_path):
+    encoded_predictions = []
+    img_ids = []
+    for img_path in img_paths:
+        img_id = img_path.split('/')[-1].replace('.jpg', '')
+        if img_id not in TEST_IMGS_TO_IGNORE:
+            img = imread(img_path)
+            img = np.expand_dims(img, 0) / 255.0
+            predictions = model.predict(img)[0]
+            predictions = binary_opening(predictions > 0.5, np.expand_dims(disk(2), -1))
+            encoded_rles = multi_rle_encode(predictions)
+            if len(encoded_rles) > 0:
+                for encoded_rle in encoded_rles:
+                    encoded_predictions.append(encoded_rle)
+                    img_ids.append(img_id)
+            else:
+                # No ship has been found
+                encoded_predictions.append(None)
+                img_ids.append(img_id)
+    gc.collect()
+    df = pd.DataFrame({"ImageId": img_ids, "EncodedPixels": encoded_predictions})
+    if not os.path.isfile(output_path):
+        df.to_csv(output_path, index=False)
+    else:
+        df.to_csv(output_path, index=False, mode="a", header=False)
+
+
+def prepare_submission(debug, model_path, output_path):
     """ Load the best trained models and predict the masks for the test images.
     """
     # Loda the model
@@ -67,23 +98,14 @@ def prepare_submission(model_path, output_path):
                               'custom_dice_loss': custom_dice_loss,
                               'true_positive_rate_metric': true_positive_rate_metric,
                               'dice_metric': dice_metric})
-    encoded_predictions = []
-    img_ids = []
-    for img_path in tqdm(glob.iglob(os.path.join(TEST_IMAGES_FOLDER, "*.jpg"))):
-        img_id = img_path.split('/')[-1].replace('.jpg', '')
-        if img_id not in TEST_IMGS_TO_IGNORE:
-            img = imread(img_path)
-            img = np.expand_dims(img, 0) / 255.0
-            predictions = model.predict(img)
-            # Encode
-            # TODO: Use the multiple_rle_encode function?
-            encoded_predictions.append(rle_encode(predictions))
-            img_ids.append(img_ids)
-    assert len(img_ids) == len(encoded_predictions)
-    # Preparing and saving the submission file.
-    predictions_df = pd.DataFrame({"ImageId": img_ids, "EncodedPixels": encoded_predictions})
-    print(predictions_df.head())
-    predictions_df.to_csv(output_path, index=False)
+    # TODO: Use batch of images to predict at once (otherwise too slow).
+    if debug:
+        test_files = glob.glob(os.path.join(TEST_IMAGES_FOLDER, "*.jpg"))[:10]
+    else:
+        test_files = glob.glob(os.path.join(TEST_IMAGES_FOLDER, "*.jpg"))
+    for i in tqdm(range(0, len(test_files), 100)):
+        img_paths = test_files[i:i + 100]
+        _predict_for_batch(img_paths, model, output_path)
 
 
 @click.command()
@@ -108,12 +130,15 @@ def main(debug, train, output_path):
                            'img_scaling': IMG_SCALING,
                            'edge_crop': EDGE_CROP,
                            'net_scaling': NET_SCALING}
+        print(hyperparameters)
+        import pdb
+        pdb.set_trace()
         pipeline_dict = ml_pipeline(train_df, valid_df, hyperparameters, n_samples, input_shape)
         print(pipeline_dict["history"])
         print("Saving the best model so far")
         pipeline_dict["model"].save(BEST_MODEL_PATH)
     # Load best model, make predictions on test data, and save them (in preparation for submission).
-    prepare_submission(BEST_MODEL_PATH, output_path)
+    prepare_submission(debug, BEST_MODEL_PATH, output_path)
 
 
 if __name__ == "__main__":
