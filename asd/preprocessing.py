@@ -67,7 +67,7 @@ def get_data(file_size_kb_threshold=FILE_SIZE_KB_THRESHOLD,
     train_df = pd.merge(masks_df, train_ids)
     valid_df = pd.merge(masks_df, valid_ids)
 
-    print(train_df.shape[0], "Training masks (befre rebalancing) DataFrame rows")
+    print(train_df.shape[0], "Training masks (before rebalancing) DataFrame rows")
     print(valid_df.shape[0], "Validation masks DataFrame rows")
 
     # In this final step, we reblanace the training DataFrame by undersampling from the "no ships" class.
