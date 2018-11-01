@@ -89,5 +89,4 @@ def build_u_net_model(input_shape, upsample_mode="DECONV", gaussian_noise=0.1,
         fullres_model.add(layers.UpSampling2D(img_scaling))
     else:
         fullres_model = seg_model
-    fullres_model.summary()
     return fullres_model

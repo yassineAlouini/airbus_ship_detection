@@ -17,6 +17,7 @@ from asd.conf import (BEST_MODEL_PATH, EDGE_CROP, IMG_SCALING, IMG_SIZE,
                       TEST_IMAGES_FOLDER, TEST_IMGS_TO_IGNORE)
 from asd.losses_metrics import (METRICS, custom_dice_loss, dice_metric,
                                 true_positive_rate_metric)
+from asd.models.pretrained_unet import build_pretrained_unet_model
 from asd.models.u_net import build_u_net_model
 from asd.preprocessing import (create_aug_gen, get_data, make_image_gen,
                                multi_rle_encode)
@@ -26,13 +27,20 @@ gc.enable()
 # TODO: Add some documentation
 
 
-def get_compiled_model(hyperparameters, input_shape=IMG_SIZE):
-    model = build_u_net_model(input_shape, **hyperparameters)
+def get_compiled_model(hyperparameters, input_shape=IMG_SIZE, load_pretrained=True):
+    if load_pretrained:
+        # TODO: Add hyperparamters to this model later.
+        # What about input_shape resizing?
+        model = build_pretrained_unet_model()
+        print("Using pretrained Unet model")
+    else:
+        model = build_u_net_model(input_shape, **hyperparameters)
     # TODO: These should be in the hp list as well.
     learning_rate = 1e-3
     decay = 1e-6
     adam_optimizer = Adam(learning_rate, decay=decay)
     model.compile(optimizer=adam_optimizer, loss=custom_dice_loss, metrics=METRICS)
+    print(model.summary())
     return model
 
 
@@ -51,6 +59,8 @@ def ml_pipeline(input_train_df, input_valid_df, hyperparameters, n_samples, inpu
     steps_per_epoch = min(max_train_steps, n_samples // batch_size)
     print("Using {} steps per epoch.".format(steps_per_epoch))
     img_genarator = make_image_gen(train_df, batch_size, img_scaling)
+    # TODO:  Try this library for data augmentation
+    # https://albumentations.readthedocs.io/en/latest/api/augmentations.html#albumentations.augmentations.transforms.PadIfNeeded
     augmented_img_generator = create_aug_gen(img_genarator, augment_brightness)
     # TODO: Improve the names of these returned values.
     valid_x, valid_y = next(make_image_gen(valid_df, batch_size, img_scaling))
@@ -118,6 +128,7 @@ def main(debug, train, output_path):
     if train:
         train_df, valid_df = get_data()
         n_samples = train_df.shape[0]
+        print(n_samples)
         input_shape = IMG_SIZE
         # Default hyperparameters.
         # TODO: Use hyperopt once the whole pipeline works as expected.
@@ -130,9 +141,6 @@ def main(debug, train, output_path):
                            'img_scaling': IMG_SCALING,
                            'edge_crop': EDGE_CROP,
                            'net_scaling': NET_SCALING}
-        print(hyperparameters)
-        import pdb
-        pdb.set_trace()
         pipeline_dict = ml_pipeline(train_df, valid_df, hyperparameters, n_samples, input_shape)
         print(pipeline_dict["history"])
         print("Saving the best model so far")

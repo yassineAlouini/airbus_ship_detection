@@ -8,10 +8,10 @@ from asd.conf import EARLY_STOPPING_PATIENCE, REDUCE_LR_PATIENCE
 
 # TODO: Add some documentation for these callbacks.
 
-weight_path = "best_weights.h5"
+WEIGHTS_PATH = "best_weights.h5"
 
 # TODO: Move some of the hyperparameters to the constants list
-MODEL_CHECKPOINT_CALLABACK = ModelCheckpoint(weight_path, monitor='val_loss',
+MODEL_CHECKPOINT_CALLABACK = ModelCheckpoint(WEIGHTS_PATH, monitor='val_loss',
                                              verbose=1, save_best_only=True,
                                              mode='min', save_weights_only=True)
 
