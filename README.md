@@ -22,10 +22,12 @@ Generate the submission file using the `run.py` script. Then, use the Kaggle API
 
 It appears that the test images are transformed images for the train ones (translated and cropped images).
 Thus, the test masks have been release. New test data should be available in the upcoming days (or weeks).
-For more details, check this [discussion](https://www.kaggle.com/c/airbus-ship-detection/discussion/64388). 
+For more details, check this [discussion](https://www.kaggle.com/c/airbus-ship-detection/discussion/64388).
 
 # Resources
 
 * https://www.kaggle.com/c/data-science-bowl-2018/discussion/54741 => a great post about advanced instance segmentation tricks. This is the winning solution for the data bowl 2018 challenge.
 
-* https://github.com/ZFTurbo/ZF_UNET_224_Pretrained_Model => Unet-like model with pretrained weights. To try later.
+* https://github.com/ZFTurbo/ZF_UNET_224_Pretrained_Model => U-net architecture with pre-trained weights. To try later.
+* https://arxiv.org/pdf/1801.05746.pdf => TernausNet model: U-net architecture with pre-trained VGG11 encoder.
+The github repo is here: https://github.com/ternaus/TernausNet.

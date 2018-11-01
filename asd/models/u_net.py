@@ -16,13 +16,13 @@ def _upsample_simple(filters, kernel_size, strides, padding):
     return layers.UpSampling2D(strides)
 
 
-upsample_dict = {"DECONV": _upsample_conv, "SIMPLE": _upsample_simple}
+UPSAMPLE_DICT = {"DECONV": _upsample_conv, "SIMPLE": _upsample_simple}
 
 
 def build_u_net_model(input_shape, upsample_mode="DECONV", gaussian_noise=0.1,
                       padding="same", net_scaling=None, img_scaling=IMG_SCALING, *args, **kargs):
 
-    upsample = upsample_dict.get(upsample_mode, _upsample_simple)
+    upsample = UPSAMPLE_DICT.get(upsample_mode, _upsample_simple)
 
     input_img = layers.Input(input_shape, name='RGB_Input')
     pp_in_layer = input_img
@@ -77,9 +77,6 @@ def build_u_net_model(input_shape, upsample_mode="DECONV", gaussian_noise=0.1,
     c9 = layers.Conv2D(8, (3, 3), activation='relu', padding=padding)(c9)
 
     d = layers.Conv2D(1, (1, 1), activation='sigmoid')(c9)
-    # TODO: Why is this commented
-    # d = layers.Cropping2D((EDGE_CROP, EDGE_CROP))(d)
-    # d = layers.ZeroPadding2D((EDGE_CROP, EDGE_CROP))(d)
     if net_scaling is not None:
         d = layers.UpSampling2D(net_scaling)(d)
 
