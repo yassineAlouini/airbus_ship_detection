@@ -11,7 +11,8 @@ TRAIN_IMAGES_FOLDER = os.path.join(BASE_DATA_PATH, 'data', 'train_v2')
 TEST_IMAGES_FOLDER = os.path.join(BASE_DATA_PATH, 'data', 'test_v2')
 BEST_MODEL_WEIGHTS_PATH = os.path.join(BASE_DATA_PATH, 'data', 'best_weights.h5')
 BEST_MODEL_PATH = os.path.join(BASE_DATA_PATH, 'data', 'best_model.h5')
-VALID_SIZE = 0.2
+# Since the data is big enough, a small validation set is enough.
+VALID_SIZE = 0.05
 FILE_SIZE_KB_THRESHOLD = 50
 # For reproducibility
 SEED = 42
@@ -26,27 +27,27 @@ SEED = 31415
 # Set it to a small number so that it can run in this notebook.
 # Notice that if it is too small, hyperopt behaves as random selection.
 MAX_EVALS = 1
-CUSTOM_DICE_LOSS_EPSILON = 1e-3
+CUSTOM_DICE_LOSS_EPSILON = 10
+CUSTOM_FOCAL_LOSS_EPSILON = 10
 # According to the data description, some files from the test folder shoud be ignore
-TEST_IMGS_TO_IGNORE = ['13703f040.jpg',
-                       '14715c06d.jpg',
-                       '33e0ff2d5.jpg',
-                       '4d4e09f2a.jpg',
-                       '877691df8.jpg',
-                       '8b909bb20.jpg',
-                       'a8d99130e.jpg',
-                       'ad55c3143.jpg',
-                       'c8260c541.jpg',
-                       'd6c7f17c7.jpg',
-                       'dc3e7c901.jpg',
-                       'e44dffe88.jpg',
-                       'ef87bad36.jpg',
-                       'f083256d8.jpg']
+# TEST_IMGS_TO_IGNORE = ['13703f040.jpg',
+#                        '14715c06d.jpg',
+#                        '33e0ff2d5.jpg',
+#                        '4d4e09f2a.jpg',
+#                        '877691df8.jpg',
+#                        '8b909bb20.jpg',
+#                        'a8d99130e.jpg',
+#                        'ad55c3143.jpg',
+#                        'c8260c541.jpg',
+#                        'd6c7f17c7.jpg',
+#                        'dc3e7c901.jpg',
+#                        'e44dffe88.jpg',
+#                        'ef87bad36.jpg',
+#                        'f083256d8.jpg']
+TEST_IMGS_TO_IGNORE = []
 # These two patiences thresholds are small so that this notebook can run with limited resources
 REDUCE_LR_PATIENCE = 30
 EARLY_STOPPING_PATIENCE = 30
-# Fraction of the validation size (compared to the total train size)
-VALID_SIZE = 0.3
 # Minimum size (in KB) of files to keep
 FILE_SIZE_KB_THRESHOLD = 50
 # The original size of the image
