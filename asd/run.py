@@ -15,7 +15,8 @@ from asd.callbacks import CALLBACKS
 from asd.conf import (BEST_MODEL_PATH, EDGE_CROP, IMG_SCALING, IMG_SIZE,
                       MAX_TRAIN_EPOCHS, MAX_TRAIN_STEPS, NET_SCALING,
                       TEST_IMAGES_FOLDER, TEST_IMGS_TO_IGNORE)
-from asd.losses_metrics import (METRICS, custom_focal_loss, dice_metric,
+from asd.losses_metrics import (METRICS, IoU_metric, custom_dice_loss,
+                                custom_focal_loss, dice_metric,
                                 true_positive_rate_metric)
 from asd.models.pretrained_unet import build_pretrained_unet_model
 from asd.models.u_net import build_u_net_model
@@ -36,10 +37,10 @@ def get_compiled_model(hyperparameters, input_shape=IMG_SIZE, load_pretrained=Tr
     else:
         model = build_u_net_model(input_shape, **hyperparameters)
     # TODO: These should be in the hp list as well.
-    learning_rate = 1e-2
+    learning_rate = 1e-4
     decay = 1e-7
     adam_optimizer = Adam(learning_rate, decay=decay)
-    model.compile(optimizer=adam_optimizer, loss=custom_focal_loss, metrics=METRICS)
+    model.compile(optimizer=adam_optimizer, loss=custom_dice_loss, metrics=METRICS)
     print(model.summary())
     return model
 
@@ -56,7 +57,9 @@ def ml_pipeline(input_train_df, input_valid_df, hyperparameters, n_samples, inpu
     img_scaling = hyperparameters["img_scaling"]
     max_train_epochs = hyperparameters["max_train_epochs"]
     augment_brightness = hyperparameters["augment_brightness"]
-    steps_per_epoch = min(max_train_steps, n_samples // batch_size)
+    # Removing this to see what happens.
+    # steps_per_epoch = min(max_train_steps, n_samples // batch_size)
+    steps_per_epoch = n_samples // batch_size
     print("Using {} steps per epoch.".format(steps_per_epoch))
     img_genarator = make_image_gen(train_df, batch_size, img_scaling)
     # TODO:  Try this library for data augmentation
@@ -105,6 +108,7 @@ def prepare_submission(debug, model_path, output_path):
     """
     # Loda the model
     model = models.load_model(model_path, custom_objects={
+                              'IoU_metric': IoU_metric,
                               'custom_dice_loss': custom_dice_loss,
                               'true_positive_rate_metric': true_positive_rate_metric,
                               'dice_metric': dice_metric})
@@ -133,7 +137,7 @@ def main(debug, train, output_path):
         # Default hyperparameters.
         # TODO: Use hyperopt once the whole pipeline works as expected.
         hyperparameters = {'gaussian_noise': 0.1,
-                           'batch_size':  32, # Try lower if necessary.
+                           'batch_size':  16,  #  Try lower if necessary.
                            'upsample_mode': "DECONV",
                            'augment_brightness': True,
                            'max_train_steps': MAX_TRAIN_STEPS,

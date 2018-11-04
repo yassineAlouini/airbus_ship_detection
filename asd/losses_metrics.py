@@ -3,8 +3,8 @@
 
 
 import keras.backend as K
-from keras.losses import binary_crossentropy
 import tensorflow as tf
+from keras.losses import binary_crossentropy
 
 from asd.conf import CUSTOM_DICE_LOSS_EPSILON, CUSTOM_FOCAL_LOSS_EPSILON
 
@@ -34,23 +34,28 @@ def IoU_metric(y_true, y_pred, smooth=1.0):
 
 # From here: https://github.com/mkocabas/focal-loss-keras/blob/master/focal_loss.py
 # TODO: Make this agnostic of tensorflow.
-def focal_loss(gamma=2., alpha=.25):
+
+
+def focal_loss(gamma=2., alpha=1.0):
     def focal_loss_fixed(y_true, y_pred):
         pt_1 = tf.where(tf.equal(y_true, 1), y_pred, tf.ones_like(y_pred))
         pt_0 = tf.where(tf.equal(y_true, 0), y_pred, tf.zeros_like(y_pred))
-        return -K.sum(alpha * K.pow(1. - pt_1, gamma) * K.log(pt_1))-K.sum((1-alpha) * K.pow( pt_0, gamma) * K.log(1. - pt_0))
+        return -K.sum(alpha * K.pow(1. - pt_1, gamma) * K.log(pt_1)) - K.sum((1 - alpha) * K.pow(pt_0, gamma) * K.log(1. - pt_0))
     return focal_loss_fixed
 
 # Inspired from here: https://www.kaggle.com/iafoss/unet34-dice-0-87#
+
+
 def custom_focal_loss(y_true, y_pred):
     # TODO: Add some documentation
-    return CUSTOM_FOCAL_LOSS_EPSILON * focal_loss()(y_true, y_pred) - K.log(dice_metric(y_true, y_pred))
+    return focal_loss()(y_true, y_pred) - 0.25 * K.log(dice_metric(y_true, y_pred))
+
 
 def custom_dice_loss(y_true, y_pred):
     """ This is a custom loss function that has two contributions: binary crossentropy
     (this is the usual metric used for binary classification) and - the dice metric (to turn it into a loss).
     """
-    return CUSTOM_DICE_LOSS_EPSILON * binary_crossentropy(y_true, y_pred) - dice_metric(y_true, y_pred)
+    return binary_crossentropy(y_true, y_pred) + 0.25 * (1 - dice_metric(y_true, y_pred))
 
 
 def true_positive_rate_metric(y_true, y_pred):
@@ -59,7 +64,6 @@ def true_positive_rate_metric(y_true, y_pred):
     in the range [0, 1].
     """
     return K.sum(K.flatten(y_true) * K.flatten(K.round(y_pred))) / K.sum(y_true)
-
 
 
 METRICS = [true_positive_rate_metric, IoU_metric, dice_metric, "binary_accuracy"]

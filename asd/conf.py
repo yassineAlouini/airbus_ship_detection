@@ -28,7 +28,7 @@ SEED = 31415
 # Notice that if it is too small, hyperopt behaves as random selection.
 MAX_EVALS = 1
 CUSTOM_DICE_LOSS_EPSILON = 10
-CUSTOM_FOCAL_LOSS_EPSILON = 10
+CUSTOM_FOCAL_LOSS_EPSILON = 1
 # According to the data description, some files from the test folder shoud be ignore
 # TEST_IMGS_TO_IGNORE = ['13703f040.jpg',
 #                        '14715c06d.jpg',
@@ -55,13 +55,14 @@ FILE_SIZE_KB_THRESHOLD = 50
 IMG_SIZE = (768, 768, 3)
 # downsampling in preprocessing
 # TODO: Should these be hp to optimize as well?
+# Without image scaling.
 IMG_SCALING = (4, 4)
 EDGE_CROP = 16
 # downsampling inside the network
-NET_SCALING = (1, 1)
+NET_SCALING = (2, 2)
 # maximum number of steps_per_epoch in training
 MAX_TRAIN_STEPS = 150
-MAX_TRAIN_EPOCHS = 100
+MAX_TRAIN_EPOCHS = 300
 # The hyperparameters space over which to search.
 # TODO: Improve the ranges and the used distributions to sample.
 HYPERPARAMETERS_SPACE = {
