@@ -10,11 +10,13 @@ from keras.optimizers import Adam
 from skimage.io import imread
 from skimage.morphology import binary_opening, disk
 from tqdm import tqdm
+from comet_ml import Experiment
 
 from asd.callbacks import CALLBACKS
 from asd.conf import (BEST_MODEL_PATH, EDGE_CROP, IMG_SCALING, IMG_SIZE,
                       MAX_TRAIN_EPOCHS, MAX_TRAIN_STEPS, NET_SCALING,
-                      TEST_IMAGES_FOLDER, TEST_IMGS_TO_IGNORE)
+                      TEST_IMAGES_FOLDER, TEST_IMGS_TO_IGNORE, COMET_ML_API_KEY, 
+                      PROJECT_NAME)
 from asd.losses_metrics import (METRICS, custom_focal_loss, dice_metric,
                                 true_positive_rate_metric)
 from asd.models.pretrained_unet import build_pretrained_unet_model
@@ -23,6 +25,11 @@ from asd.preprocessing import (create_aug_gen, get_data, make_image_gen,
                                multi_rle_encode)
 
 gc.enable()
+
+# Comet experiement
+experiment = Experiment(api_key=COMET_ML_API_KEY,
+                        project_name=PROJECT_NAME,
+                        auto_param_logging=False)
 
 # TODO: Add some documentation
 
@@ -63,6 +70,7 @@ def ml_pipeline(input_train_df, input_valid_df, hyperparameters, n_samples, inpu
     # https://albumentations.readthedocs.io/en/latest/api/augmentations.html#albumentations.augmentations.transforms.PadIfNeeded
     augmented_img_generator = create_aug_gen(img_genarator, augment_brightness)
     # TODO: Improve the names of these returned values.
+    # TODO: Replace this with a bigger validation set.
     valid_x, valid_y = next(make_image_gen(valid_df, batch_size, img_scaling))
     model = get_compiled_model(hyperparameters, input_shape)
     # Use only one worker for thread-safety reason.
@@ -116,6 +124,7 @@ def prepare_submission(debug, model_path, output_path):
     for i in tqdm(range(0, len(test_files), 100)):
         img_paths = test_files[i:i + 100]
         _predict_for_batch(img_paths, model, output_path)
+    return model
 
 
 @click.command()
@@ -126,13 +135,13 @@ def prepare_submission(debug, model_path, output_path):
 @click.option('--output_path', type=str, help='Where to store the submission file.')
 def main(debug, train, output_path):
     if train:
-        train_df, valid_df = get_data()
-        n_samples = train_df.shape[0]
-        print(n_samples)
-        input_shape = IMG_SIZE
-        # Default hyperparameters.
-        # TODO: Use hyperopt once the whole pipeline works as expected.
-        hyperparameters = {'gaussian_noise': 0.1,
+        with experiment.train():
+            train_df, valid_df = get_data()
+            n_samples = train_df.shape[0]
+            print(n_samples)
+            input_shape = IMG_SIZE
+            # Default hyperparameters.
+            hyperparameters = {'gaussian_noise': 0.1,
                            'batch_size':  32, # Try lower if necessary.
                            'upsample_mode': "DECONV",
                            'augment_brightness': True,
@@ -141,12 +150,18 @@ def main(debug, train, output_path):
                            'img_scaling': IMG_SCALING,
                            'edge_crop': EDGE_CROP,
                            'net_scaling': NET_SCALING}
-        pipeline_dict = ml_pipeline(train_df, valid_df, hyperparameters, n_samples, input_shape)
-        print(pipeline_dict["history"])
-        print("Saving the best model so far")
-        pipeline_dict["model"].save(BEST_MODEL_PATH)
-    # Load best model, make predictions on test data, and save them (in preparation for submission).
-    prepare_submission(debug, BEST_MODEL_PATH, output_path)
+            experiment.log_multiple_params(hyperparameters)
+            pipeline_dict = ml_pipeline(train_df, valid_df, hyperparameters, n_samples, input_shape)
+            history = pipeline_dict["history"]
+            print("Saving the best model so far")
+            pipeline_dict["model"].save(BEST_MODEL_PATH)
+    with experiment.test():
+        # Load best model, make predictions on test data, and save them (in preparation for submission).
+        model = prepare_submission(debug, BEST_MODEL_PATH, output_path)
+        # TODO: Finish this 
+        # loss, _ = model.evaluate(x_valid, y_valid)
+
+
 
 
 if __name__ == "__main__":
