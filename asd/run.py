@@ -5,6 +5,7 @@ import os
 import click
 import numpy as np
 import pandas as pd
+from comet_ml import Experiment
 from keras import models
 from keras.optimizers import Adam
 from skimage.io import imread
@@ -14,16 +15,15 @@ from tqdm import tqdm
 from asd.callbacks import CALLBACKS
 from asd.conf import (BEST_MODEL_PATH, COMET_ML_API_KEY, EDGE_CROP,
                       IMG_SCALING, IMG_SIZE, MAX_TRAIN_EPOCHS, MAX_TRAIN_STEPS,
-                      METRICS, NET_SCALING, PROJECT_NAME, TEST_IMAGES_FOLDER,
+                      NET_SCALING, PROJECT_NAME, TEST_IMAGES_FOLDER,
                       TEST_IMGS_TO_IGNORE)
-from asd.losses_metrics import (IoU_metric, custom_dice_loss,
+from asd.losses_metrics import (METRICS, IoU_metric, custom_dice_loss,
                                 custom_focal_loss, dice_metric,
                                 true_positive_rate_metric)
 from asd.models.pretrained_unet import build_pretrained_unet_model
 from asd.models.u_net import build_u_net_model
 from asd.preprocessing import (create_aug_gen, get_data, make_image_gen,
                                multi_rle_encode)
-from comet_ml import Experiment
 
 gc.enable()
 
@@ -59,7 +59,6 @@ def ml_pipeline(input_train_df, input_valid_df, hyperparameters, n_samples, inpu
     train_df = input_train_df.copy()
     valid_df = input_valid_df.copy()
     # TODO: Improve the hp parsing section
-    max_train_steps = hyperparameters["max_train_steps"]
     batch_size = hyperparameters["batch_size"]
     img_scaling = hyperparameters["img_scaling"]
     max_train_epochs = hyperparameters["max_train_epochs"]
@@ -68,19 +67,14 @@ def ml_pipeline(input_train_df, input_valid_df, hyperparameters, n_samples, inpu
     # steps_per_epoch = min(max_train_steps, n_samples // batch_size)
     steps_per_epoch = n_samples // batch_size
     print("Using {} steps per epoch.".format(steps_per_epoch))
-    img_genarator = make_image_gen(train_df, batch_size, img_scaling)
+    train_genarator = create_aug_gen(make_image_gen(train_df, batch_size, img_scaling), augment_brightness)
+    validation_genarator = create_aug_gen(make_image_gen(valid_df, batch_size, img_scaling), augment_brightness)
     # TODO:  Try this library for data augmentation
     # https://albumentations.readthedocs.io/en/latest/api/augmentations.html#albumentations.augmentations.transforms.PadIfNeeded
-    augmented_img_generator = create_aug_gen(img_genarator, augment_brightness)
-    # TODO: Improve the names of these returned values.
-    # TODO: Replace this with a bigger validation set.
-    valid_x, valid_y = next(make_image_gen(valid_df, batch_size, img_scaling))
     model = get_compiled_model(hyperparameters, input_shape)
-    # Use only one worker for thread-safety reason.
-    # TODO: Investigate this claim.
-    history = model.fit_generator(augmented_img_generator, steps_per_epoch=steps_per_epoch,
-                                  epochs=max_train_epochs, validation_data=(valid_x, valid_y),
-                                  callbacks=CALLBACKS, workers=1)
+    history = model.fit_generator(train_genarator, steps_per_epoch=steps_per_epoch,
+                                  epochs=max_train_epochs, validation_data=validation_genarator,
+                                  callbacks=CALLBACKS, workers=2, validation_steps=steps_per_epoch)
     return {"history": history.history, "model": model}
 
 

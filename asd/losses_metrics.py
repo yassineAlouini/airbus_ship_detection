@@ -9,7 +9,7 @@ from keras.losses import binary_crossentropy
 from asd.conf import CUSTOM_DICE_LOSS_EPSILON, CUSTOM_FOCAL_LOSS_EPSILON
 
 
-def dice_metric(y_true, y_pred, smooth=1.0):
+def dice_metric(y_true, y_pred):
     """
     Also known as the Sorensen-Dice coeffecient (https://en.wikipedia.org/wiki/S%C3%B8rensen%E2%80%93Dice_coefficient),
     this is the F1 score (i.e. harmonic mean of precision and recall).
@@ -18,10 +18,12 @@ def dice_metric(y_true, y_pred, smooth=1.0):
     intersection = K.sum(y_true * y_pred, axis=[1, 2, 3])
     union = K.sum(y_true, axis=[1, 2, 3]) + K.sum(y_pred, axis=[1, 2, 3])
     # Compute the dice metric and then take the average over the samples.
-    return K.mean((2. * intersection + smooth) / (union + smooth), axis=0)
+    if union == 0:
+        union = 1e-3
+    return K.mean(2. * intersection / union, axis=0)
 
 
-def IoU_metric(y_true, y_pred, smooth=1.0):
+def IoU_metric(y_true, y_pred):
     """
     Also known as the Sorensen-Dice coeffecient (https://en.wikipedia.org/wiki/S%C3%B8rensen%E2%80%93Dice_coefficient),
     this is the F1 score (i.e. harmonic mean of precision and recall).
@@ -30,7 +32,9 @@ def IoU_metric(y_true, y_pred, smooth=1.0):
     intersection = K.sum(y_true * y_pred, axis=[1, 2, 3])
     union = K.sum(y_true, axis=[1, 2, 3]) + K.sum(y_pred, axis=[1, 2, 3])
     # Compute the dice metric and then take the average over the samples.
-    return K.mean(intersection / (union + smooth), axis=0)
+    if union == 0:
+        union = 1e-3
+    return K.mean(intersection / union, axis=0)
 
 # From here: https://github.com/mkocabas/focal-loss-keras/blob/master/focal_loss.py
 # TODO: Make this agnostic of tensorflow.

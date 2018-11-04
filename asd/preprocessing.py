@@ -57,9 +57,6 @@ def get_data(file_size_kb_threshold=FILE_SIZE_KB_THRESHOLD,
                         .assign(file_size_kb=lambda df: _v_file_size(df.file_path))
                         .loc[lambda df: df.file_size_kb > file_size_kb_threshold, :])
 
-    print("Processed ships DataFrame")
-    print(ships_df.head())
-
     # Split the ships DataFrame into train and validation DataFrames. Notice the use of the
     # stratify keyword: this is needed so that train and validation datasets have similar number of ships
     # distributions. Otherwise, train and validation phases won't be comparable.

@@ -78,6 +78,5 @@ HYPERPARAMETERS_SPACE = {
     'net_scaling': NET_SCALING
 }
 # Get yours by visiting comet.ml
-COMET_ML_API_KEY = os.environ.get(COMET_ML_API_KEY, "your/comet/API/key")
+COMET_ML_API_KEY = os.environ.get("COMET_ML_API_KEY", "your/comet/API/key")
 PROJECT_NAME = "Airbus ship detection challenge"
-
