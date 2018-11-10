@@ -57,6 +57,10 @@ def get_data(file_size_kb_threshold=FILE_SIZE_KB_THRESHOLD,
                         .assign(file_size_kb=lambda df: _v_file_size(df.file_path))
                         .loc[lambda df: df.file_size_kb > file_size_kb_threshold, :])
 
+    # Only keep train data with ships (see if it improves the validation TPR).
+
+    ships_df = ships_df.loc[lambda df: df.has_ship == 1]
+
     # Split the ships DataFrame into train and validation DataFrames. Notice the use of the
     # stratify keyword: this is needed so that train and validation datasets have similar number of ships
     # distributions. Otherwise, train and validation phases won't be comparable.
@@ -74,12 +78,13 @@ def get_data(file_size_kb_threshold=FILE_SIZE_KB_THRESHOLD,
     # if number of unique ships buckets * SAMPLES_PER_SHIPS_BUCKET < number of rows. It could be bigger as well.
     # In that case, you need to set replace in the sample function to True.
     # TODO: Find a way to replace the .apply with a vectorized operation.
-    balanced_train_df = (train_df.assign(ships_bucket=lambda df: (df["ships"] + 2) // 3)
-                                 .groupby('ships_bucket')
-                                 .apply(lambda x: x.sample(SAMPLES_PER_SHIPS_BUCKET,
-                                                           random_state=SEED) if len(x) > SAMPLES_PER_SHIPS_BUCKET
-                                        else x))
-    return balanced_train_df, valid_df
+    # Try without rebalancing.
+    # balanced_train_df = (train_df.assign(ships_bucket=lambda df: (df["ships"] + 2) // 3)
+    #                              .groupby('ships_bucket')
+    #                              .apply(lambda x: x.sample(SAMPLES_PER_SHIPS_BUCKET,
+    #                                                        random_state=SEED) if len(x) > SAMPLES_PER_SHIPS_BUCKET
+    #                                     else x))
+    return train_df, valid_df
 
 
 # TODO: Finish cleaning the next few functions.

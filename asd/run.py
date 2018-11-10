@@ -14,9 +14,9 @@ from tqdm import tqdm
 
 from asd.callbacks import CALLBACKS
 from asd.conf import (BEST_MODEL_PATH, COMET_ML_API_KEY, EDGE_CROP,
-                      IMG_SCALING, IMG_SIZE, MAX_TRAIN_EPOCHS, MAX_TRAIN_STEPS,
-                      NET_SCALING, PROJECT_NAME, TEST_IMAGES_FOLDER,
-                      TEST_IMGS_TO_IGNORE)
+                      IMG_SCALING, IMG_SIZE, IMGS_TO_IGNORE, MAX_TRAIN_EPOCHS,
+                      MAX_TRAIN_STEPS, NET_SCALING, PROJECT_NAME,
+                      TEST_IMAGES_FOLDER)
 from asd.losses_metrics import (METRICS, IoU_metric, custom_dice_loss,
                                 custom_focal_loss, dice_metric,
                                 true_positive_rate_metric)
@@ -83,7 +83,7 @@ def _predict_for_batch(img_paths, model, output_path):
     img_ids = []
     for img_path in img_paths:
         img_id = img_path.split('/')[-1].replace('.jpg', '')
-        if img_id not in TEST_IMGS_TO_IGNORE:
+        if img_id not in IMGS_TO_IGNORE:
             img = imread(img_path)
             img = np.expand_dims(img, 0) / 255.0
             predictions = model.predict(img)[0]
@@ -135,7 +135,7 @@ def main(debug, train, output_path):
     if train:
         with experiment.train():
             train_df, valid_df = get_data()
-            n_samples = train_df.shape[0]
+            n_samples = len(train_df)
             print(n_samples)
             input_shape = IMG_SIZE
             # Default hyperparameters.
@@ -153,6 +153,7 @@ def main(debug, train, output_path):
             history = pipeline_dict["history"]
             print("Saving the best model so far")
             pipeline_dict["model"].save(BEST_MODEL_PATH)
+            experiment.log_multiple_params(history)
     with experiment.test():
         # Load best model, make predictions on test data, and save them (in preparation for submission).
         model = prepare_submission(debug, BEST_MODEL_PATH, output_path)
