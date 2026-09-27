@@ -14,7 +14,7 @@ rank 816/879 with 0.51638 on the final leaderboard.
 | Old: Mask R-CNN kernel | 0.51299 | 0.75707 |
 | **All images predicted empty** (calibration submission, 2026-09-27) | **0.52090** | **0.76566** |
 | Leaderboard reference: #1 / top-10% cutoff / median | 0.76444 / ~0.7305 / ~0.700 | |
-| **New solution (`modern/`)** | _see section 5_ | _see section 5_ |
+| **New solution (`modern/`)**, late submission 2026-09-27 | **0.73128** | **0.84920** |
 
 Both old submissions score **below the trivial "no ships anywhere" submission** on both splits. In other words, the old
 models added negative value. Five of the eight old submissions did not score at all (status `ERROR`).
@@ -93,7 +93,7 @@ exactly what the leaderboard shows.
 ## 3. The modern solution (`modern/airbus_modern.py`)
 
 It is a single script that trains, validates with the real metric, tunes the post-processing and writes
-`submission.csv`. It runs as one Kaggle T4 kernel (about 9.5 h).
+`submission.csv`. It runs as one Kaggle T4 kernel (about 7.7 h for the run reported below).
 
 | Problem (section 2) | Fix |
 |---|---|
@@ -138,4 +138,49 @@ kaggle competitions submit -c airbus-ship-detection -f out/submission.csv -m "mo
 
 ## 5. Results
 
-_To be filled in when the full Kaggle run finishes._
+A single model, trained once, with no ensembling. Full run on a Kaggle T4 (kernel version 2, 2026-09-27).
+
+### Leaderboard (late submission)
+
+| Submission | Public (ranked) | Private | Rank on the final leaderboard* |
+|---|---|---|---|
+| Old best (2018) | 0.51638 | 0.75929 | 812 / 879 (bottom 8%) |
+| All empty | 0.52090 | 0.76566 | 759 / 879 |
+| **New solution** | **0.73128** | **0.84920** | **81 / 879 (top 9.2%, bronze range)** |
+| #1 in 2018 | 0.76444 | | 1 |
+
+\* This is where the score would rank among the 879 teams on the final leaderboard. It is a late submission, so it
+is not officially ranked. The bronze cutoff (top 10%) was rank 88 at 0.7306.
+
+The gain is **+0.215 on the ranked split** and +0.090 on the other split.
+
+### Training and validation
+
+* 16 epochs (the `max_epochs` cap) in 7.0 h. Each epoch covered 42.5k ship images plus 42.5k freshly sampled empty
+  images. Training loss went from 0.76 to 0.32 and was still slowly decreasing.
+* Validation used 4,000 held-out images with the natural distribution (22% with ships) and the exact competition
+  metric:
+
+| | F2 |
+|---|---|
+| All-empty baseline | 0.776 |
+| Model without the gate | 0.865 |
+| **Model with the gate (selected config)** | **0.880** |
+| On images with ships | 0.486 |
+| On empty images | 0.993 |
+
+* The selected config was gate ≥ 0.95, mask threshold 0.5, minimum area 20 px. The mask threshold barely matters
+  (±0.0005 between 0.3 and 0.7).
+* Test predictions: 15,606 images and 17,896 rows. 17.8% of images have at least one ship, with 1.82 ships per such
+  image on average. No instances overlap.
+
+### What the numbers say about next steps
+
+* **The gate is still the bottleneck.** The best gate threshold (0.95) sits on the edge of the grid, and gating adds
+  +0.015 on top of the ungated model. The auxiliary head is not confident enough on empty images. A dedicated
+  classifier (section 3, "Known limitations") and a finer threshold grid above 0.95 are the first things to try.
+* **Training was cut by the epoch cap, not by the time budget** (7.0 h of the 8.5 h allowed), and the loss was still
+  falling. Raising `ASD_MAX_EPOCHS` to about 19 fits the same kernel.
+* **Ship images score 0.49.** Instance quality at high IoU thresholds is where the top teams' remaining margin
+  (0.731 → 0.764) comes from. The main levers are an ensemble of encoders, including a hierarchical transformer
+  such as `mit_b2`, rotation TTA, and snapping masks to rotated rectangles.
