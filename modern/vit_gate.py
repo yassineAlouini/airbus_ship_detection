@@ -171,14 +171,20 @@ def predict_gate(model, image_dir, image_ids, cfg, device):
     return dict(zip(image_ids, np.concatenate(probs).tolist()))
 
 
-def load_segmenter(cfg, device):
+def find_kernel_output(filename, override=""):
+    """Locate a file produced by an earlier kernel and mounted through ``kernel_sources``."""
     # Kernel outputs are mounted under /kaggle/input/notebooks/<user>/<slug>/ (older layout: /kaggle/input/<slug>/).
     # Only look there: a generic depth-4 glob walks the 192k competition images and took ~16 min.
-    candidates = glob.glob("/kaggle/input/notebooks/*/*/model.pt") + glob.glob("/kaggle/input/*/model.pt")
-    path = cfg["segmenter_path"] or next(iter(sorted(candidates)), "")
+    candidates = glob.glob(f"/kaggle/input/notebooks/*/*/{filename}") + glob.glob(f"/kaggle/input/*/{filename}")
+    path = override or next(iter(sorted(candidates)), "")
     if not path:
-        raise FileNotFoundError("stage-1 model.pt not found; set ASD_SEGMENTER_PATH")
-    print(f"loading segmenter from {path}", flush=True)
+        raise FileNotFoundError(f"{filename} not found in /kaggle/input; pass its path explicitly")
+    print(f"loading {filename} from {path}", flush=True)
+    return path
+
+
+def load_segmenter(cfg, device):
+    path = find_kernel_output("model.pt", cfg["segmenter_path"])
     # Weights come from the pretrained checkpoint, so the encoder does not need to download ImageNet weights.
     model = ShipNet(cfg["encoder"], None).to(device).to(memory_format=torch.channels_last)
     model.load_state_dict(torch.load(path, map_location=device))

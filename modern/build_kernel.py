@@ -4,9 +4,11 @@ Stage 1 (U-Net):       python build_kernel.py [KEY=VALUE ...]
                        kaggle kernels push -p kernel --accelerator NvidiaTeslaT4
 Stage 2 (ViT gate):    python build_kernel.py --stage vit [KEY=VALUE ...]
                        kaggle kernels push -p kernel_vit --accelerator NvidiaTeslaT4
+Stage 3 (diagnosis):   python build_kernel.py --stage diag [KEY=VALUE ...]
+                       kaggle kernels push -p kernel_diag --accelerator NvidiaTeslaT4
 
-Stage 2 bundles ``airbus_modern.py`` (without its ``__main__`` block) followed by ``vit_gate.py`` (without its import
-of ``airbus_modern``), because a Kaggle script kernel is a single file.
+A Kaggle script kernel is a single file, so later stages concatenate the modules they depend on, dropping the
+sibling imports and every ``__main__`` block except the last one.
 """
 
 import re
@@ -21,14 +23,22 @@ if args[:1] == ["--stage"]:
 overrides = dict(arg.split("=", 1) for arg in args)
 header = "import os\n" + "".join(f"os.environ[{k!r}] = {v!r}\n" for k, v in overrides.items())
 
-base = (here / "airbus_modern.py").read_text()
-if stage == "unet":
-    body, out = base, here / "kernel" / "airbus_modern_kernel.py"
-elif stage == "vit":
-    base = base.replace('\n\nif __name__ == "__main__":\n    main()\n', "\n")
-    vit = re.sub(r"from airbus_modern import \([^)]*\)\n", "", (here / "vit_gate.py").read_text())
-    body, out = base + "\n\n" + vit, here / "kernel_vit" / "vit_gate_kernel.py"
-else:
-    sys.exit(f"unknown stage {stage!r}")
-out.write_text(header + "\n" + body)
+STAGES = {
+    "unet": (["airbus_modern.py"], "kernel/airbus_modern_kernel.py"),
+    "vit": (["airbus_modern.py", "vit_gate.py"], "kernel_vit/vit_gate_kernel.py"),
+    "diag": (["airbus_modern.py", "vit_gate.py", "diagnose.py"], "kernel_diag/diagnose_kernel.py"),
+}
+if stage not in STAGES:
+    sys.exit(f"unknown stage {stage!r}; choose from {sorted(STAGES)}")
+files, out = STAGES[stage]
+parts = []
+for i, name in enumerate(files):
+    code = (here / name).read_text()
+    # Sibling-module imports are satisfied by the concatenation itself.
+    code = re.sub(r"from (airbus_modern|vit_gate) import (\([^)]*\)|[^\n]*)\n", "", code)
+    if i < len(files) - 1:
+        code = code.replace('\n\nif __name__ == "__main__":\n    main()\n', "\n")
+    parts.append(code)
+out = here / out
+out.write_text(header + "\n" + "\n\n".join(parts))
 print(f"wrote {out.relative_to(here)} with {overrides or 'default settings'}")

@@ -5,3 +5,4 @@ __pycache__
 modern/kernel/airbus_modern_kernel.py
 .pytest_cache
 modern/kernel_vit/vit_gate_kernel.py
+modern/kernel_diag/diagnose_kernel.py

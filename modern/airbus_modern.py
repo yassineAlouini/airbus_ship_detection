@@ -239,6 +239,27 @@ def predict_tta(model, x):
     return seg_sum / 4, cls_sum / 4
 
 
+@torch.no_grad()
+def predict_dihedral(model, x):
+    """8-way dihedral TTA. Returns (flip4_seg, flip4_cls, dihedral8_seg, dihedral8_cls).
+
+    The 4 flips used by ``predict_tta`` (identity, h-flip, v-flip, 180 degrees) are the rotations by 0 / 180 degrees
+    with and without an h-flip, so both averages come from one set of 8 forward passes.
+    """
+    seg4 = seg8 = cls4 = cls8 = 0
+    for flip in (False, True):
+        xf = torch.flip(x, (3,)) if flip else x
+        for k in range(4):
+            seg, cls = model(torch.rot90(xf, k, (2, 3)))
+            seg = torch.rot90(torch.sigmoid(seg.float()), -k, (2, 3))
+            seg = torch.flip(seg, (3,)) if flip else seg
+            cls = torch.sigmoid(cls.float())[:, 0]
+            seg8, cls8 = seg8 + seg, cls8 + cls
+            if k in (0, 2):
+                seg4, cls4 = seg4 + seg, cls4 + cls
+    return seg4 / 4, cls4 / 4, seg8 / 8, cls8 / 8
+
+
 # ---------------------------------------------------------------------------------------------------------------------
 # Post-processing: probabilities -> non-overlapping instances
 # ---------------------------------------------------------------------------------------------------------------------
@@ -280,6 +301,34 @@ def relabel_sequential(labels):
     lut = np.zeros(int(uniq.max()) + 1, dtype=np.int32)
     lut[uniq] = np.arange(len(uniq))
     return lut[labels]
+
+
+def snap_to_rectangles(labels, min_area=0):
+    """Replace every instance with at least ``min_area`` pixels by its minimum-area rotated rectangle.
+
+    Ships are almost always elongated rectangles, so a ragged predicted outline can be squared off. Rectangles are
+    painted largest first and only onto pixels not already claimed, so instances stay disjoint; an instance whose
+    rectangle would be fully claimed keeps its original pixels.
+    """
+    n = int(labels.max())
+    if n == 0:
+        return labels
+    areas = np.bincount(labels.ravel(), minlength=n + 1)
+    out = np.zeros_like(labels)
+    for k in sorted(range(1, n + 1), key=lambda k: -areas[k]):
+        inst = labels == k
+        if areas[k] >= max(min_area, 3):
+            ys, xs = np.nonzero(inst)
+            box = cv2.boxPoints(cv2.minAreaRect(np.stack([xs, ys], 1).astype(np.float32)))
+            rect = np.zeros(labels.shape, np.uint8)
+            cv2.fillPoly(rect, [np.round(box).astype(np.int32)], 1)
+            region = (rect.astype(bool) | inst) & (out == 0)
+        else:
+            region = inst & (out == 0)
+        if not region.any():
+            region = inst
+        out[region] = k
+    return relabel_sequential(out)
 
 
 def rles_from_labels(labels):

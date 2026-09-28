@@ -2,7 +2,7 @@ import numpy as np
 import pytest
 
 from airbus_modern import (border_from_labels, gate_sources, image_f2, instances_from_probs, labels_from_rles,
-                           rle_decode, rle_encode, rles_from_labels)
+                           rle_decode, rle_encode, rles_from_labels, snap_to_rectangles)
 
 
 def _box(labels, k, y0, y1, x0, x1):
@@ -66,3 +66,44 @@ def test_gate_sources_include_mean_with_aux_head():
     sources = gate_sources(np.array([0.2, 0.8]), {"vit": np.array([0.6, 1.0])})
     assert set(sources) == {"aux", "vit", "mean_aux_vit"}
     assert np.allclose(sources["mean_aux_vit"], [0.4, 0.9])
+
+
+def test_snap_squares_off_a_ragged_rotated_ship():
+    import cv2
+
+    truth = np.zeros((768, 768), np.uint8)
+    box = cv2.boxPoints(((300, 300), (60, 14), 30)).astype(np.int32)
+    cv2.fillPoly(truth, [box], 1)
+    ragged = truth.copy()
+    ragged[::3, ::5] = 0  # holes along the hull and inside
+    ragged = cv2.erode(ragged, np.ones((2, 2), np.uint8))
+    truth_labels = truth.astype(np.int32)
+    snapped = snap_to_rectangles(ragged.astype(np.int32))
+    assert image_f2(truth_labels, snapped) > image_f2(truth_labels, ragged.astype(np.int32))
+    assert snapped.max() == 1
+
+
+def test_snap_keeps_instances_disjoint_and_respects_min_area():
+    labels = _box(_box(np.zeros((768, 768), np.int32), 1, 100, 110, 100, 160), 2, 110, 120, 100, 160)
+    snapped = snap_to_rectangles(labels)
+    assert snapped.max() == 2
+    assert image_f2(labels, snapped) == 1.0
+    tiny = _box(np.zeros((768, 768), np.int32), 1, 5, 7, 5, 7)
+    assert (snap_to_rectangles(tiny, min_area=10) == tiny).all()
+
+
+def test_dihedral_tta_is_exact_for_an_equivariant_model():
+    import torch
+
+    from airbus_modern import predict_dihedral, predict_tta
+
+    class Identity(torch.nn.Module):
+        def forward(self, x):
+            return x[:, :2] * 4 - 2, x.mean((1, 2, 3))[:, None]
+
+    x = torch.rand(2, 3, 32, 32)
+    seg4, cls4, seg8, cls8 = predict_dihedral(Identity(), x)
+    ref_seg, ref_cls = predict_tta(Identity(), x)
+    expected = torch.sigmoid(x[:, :2] * 4 - 2)
+    assert torch.allclose(seg4, ref_seg, atol=1e-6) and torch.allclose(cls4, ref_cls, atol=1e-6)
+    assert torch.allclose(seg8, expected, atol=1e-6)
