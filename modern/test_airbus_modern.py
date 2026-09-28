@@ -1,8 +1,8 @@
 import numpy as np
 import pytest
 
-from airbus_modern import (border_from_labels, image_f2, instances_from_probs, labels_from_rles, rle_decode,
-                           rle_encode, rles_from_labels)
+from airbus_modern import (border_from_labels, gate_sources, image_f2, instances_from_probs, labels_from_rles,
+                           rle_decode, rle_encode, rles_from_labels)
 
 
 def _box(labels, k, y0, y1, x0, x1):
@@ -60,3 +60,9 @@ def test_gate_and_min_area():
 
 def test_labels_from_rles_ignores_nan():
     assert labels_from_rles([np.nan]).max() == 0
+
+
+def test_gate_sources_include_mean_with_aux_head():
+    sources = gate_sources(np.array([0.2, 0.8]), {"vit": np.array([0.6, 1.0])})
+    assert set(sources) == {"aux", "vit", "mean_aux_vit"}
+    assert np.allclose(sources["mean_aux_vit"], [0.4, 0.9])

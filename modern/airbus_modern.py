@@ -383,19 +383,33 @@ def predict_probs(model, image_dir, image_ids, cfg, device):
             k += 1
 
 
-GATE_GRID = [0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.85, 0.9, 0.95]
+# Finer steps near 1: the best gate threshold sat on the grid edge (0.95) in the first full run.
+GATE_GRID = [0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.85, 0.9, 0.93, 0.95, 0.97, 0.98, 0.99]
 MASK_GRID = [0.3, 0.4, 0.5, 0.6, 0.7]
 AREA_GRID = [0, 20, 40, 80, 120, 160]
 
 
-def tune_postprocessing(model, valid, rles_by_id, cfg, device):
+def gate_sources(aux_prob, extra_probs):
+    """Candidate image-level ship probabilities: the U-Net aux head, each extra gate, and its mean with the head."""
+    sources = {"aux": aux_prob}
+    for name, prob in extra_probs.items():
+        sources[name] = prob
+        sources[f"mean_aux_{name}"] = (aux_prob + prob) / 2
+    return sources
+
+
+def tune_postprocessing(model, valid, rles_by_id, cfg, device, extra_gates=None):
     """Grid-search the post-processing on the validation split with the exact competition metric.
+
+    ``extra_gates`` maps a gate name to ``{image_id: ship probability}`` (e.g. a dedicated classifier); every gate
+    source from ``gate_sources`` is searched alongside the thresholds.
 
     Predictions are streamed (caching 768x768 maps for thousands of images does not fit in RAM). The gate only
     zeroes whole images and min_area only drops instances, so one watershed per mask threshold is enough.
     """
+    extra_gates = extra_gates or {}
     image_dir = Path(cfg["data_dir"]) / "train_v2"
-    ship_probs, empty_scores, f2 = [], [], []  # f2: [image, mask_thr, min_area]
+    image_ids, aux_probs, empty_scores, f2 = [], [], [], []  # f2: [image, mask_thr, min_area]
     for image_id, body, border, ship_prob in predict_probs(model, image_dir, valid, cfg, device):
         truth = labels_from_rles(rles_by_id.get(image_id, []))
         body, border = body.astype(np.float32), border.astype(np.float32)
@@ -404,40 +418,53 @@ def tune_postprocessing(model, valid, rles_by_id, cfg, device):
             labels = segment_instances(body, border, mask_thr)
             for j, min_area in enumerate(AREA_GRID):
                 scores[i, j] = image_f2(truth, remove_small(labels, min_area))
-        ship_probs.append(ship_prob)
+        image_ids.append(image_id)
+        aux_probs.append(ship_prob)
         empty_scores.append(1.0 if truth.max() == 0 else 0.0)
         f2.append(scores)
-    ship_probs, empty_scores, f2 = np.array(ship_probs), np.array(empty_scores), np.stack(f2)
-    results = []
-    for gate_thr in GATE_GRID:
-        gated = np.where((ship_probs >= gate_thr)[:, None, None], f2, empty_scores[:, None, None]).mean(0)
-        for i, mask_thr in enumerate(MASK_GRID):
-            for j, min_area in enumerate(AREA_GRID):
-                results.append({"gate_thr": gate_thr, "mask_thr": mask_thr, "min_area": min_area,
-                                "score": float(gated[i, j])})
-    results = sorted(results, key=lambda r: -r["score"])
-    no_model = float(empty_scores.mean())
+    empty_scores, f2 = np.array(empty_scores), np.stack(f2)
+    extra = {name: np.array([probs[i] for i in image_ids]) for name, probs in extra_gates.items()}
+    sources = gate_sources(np.array(aux_probs), extra)
     ships = empty_scores == 0
+    results, gate_auc = [], {}
+    for gate, ship_probs in sources.items():
+        if ships.any() and (~ships).any():
+            from sklearn.metrics import roc_auc_score
+            gate_auc[gate] = float(roc_auc_score(ships, ship_probs))
+        for gate_thr in GATE_GRID:
+            gated = np.where((ship_probs >= gate_thr)[:, None, None], f2, empty_scores[:, None, None]).mean(0)
+            for i, mask_thr in enumerate(MASK_GRID):
+                for j, min_area in enumerate(AREA_GRID):
+                    results.append({"gate": gate, "gate_thr": gate_thr, "mask_thr": mask_thr, "min_area": min_area,
+                                    "score": float(gated[i, j])})
+    results = sorted(results, key=lambda r: -r["score"])
     best = results[0]
     bi, bj = MASK_GRID.index(best["mask_thr"]), AREA_GRID.index(best["min_area"])
-    gated_best = np.where(ship_probs >= best["gate_thr"], f2[:, bi, bj], empty_scores)
-    breakdown = {"all_empty_baseline": no_model, "best_score": best["score"],
+    gated_best = np.where(sources[best["gate"]] >= best["gate_thr"], f2[:, bi, bj], empty_scores)
+    best_per_gate = {g: max(r["score"] for r in results if r["gate"] == g) for g in sources}
+    breakdown = {"all_empty_baseline": float(empty_scores.mean()), "best_score": best["score"],
                  "score_on_ship_images": float(gated_best[ships].mean()) if ships.any() else None,
                  "score_on_empty_images": float(gated_best[~ships].mean()) if (~ships).any() else None,
-                 "ungated_score": float(f2[:, bi, bj].mean())}
+                 "ungated_score": float(f2[:, bi, bj].mean()), "gate_auc": gate_auc,
+                 "best_score_per_gate": best_per_gate,
+                 # Score with a perfect gate: the ceiling any classifier improvement can reach with this segmenter.
+                 "oracle_gate_score": float(np.where(ships, f2[:, bi, bj], 1.0).mean())}
     print(f"validation: {json.dumps(breakdown)}; top configs:", flush=True)
     for r in results[:5]:
         print("  ", r, flush=True)
     return best, {**breakdown, "grid": results}
 
 
-def write_submission(model, best, cfg, device):
+def write_submission(model, best, cfg, device, extra_gates=None):
+    extra_gates = extra_gates or {}
     test_dir = Path(cfg["data_dir"]) / "test_v2"
     test_ids = sorted(pd.read_csv(Path(cfg["data_dir"]) / "sample_submission_v2.csv").ImageId)
     if cfg["limit"]:
         test_ids = [i for i in test_ids if (test_dir / i).exists()][:cfg["limit"]]
     rows = []
-    for image_id, body, border, ship_prob in predict_probs(model, test_dir, test_ids, cfg, device):
+    for image_id, body, border, aux_prob in predict_probs(model, test_dir, test_ids, cfg, device):
+        sources = gate_sources(aux_prob, {name: probs[image_id] for name, probs in extra_gates.items()})
+        ship_prob = sources[best.get("gate", "aux")]
         labels = instances_from_probs(body.astype(np.float32), border.astype(np.float32), ship_prob,
                                       best["gate_thr"], best["mask_thr"], best["min_area"])
         rles = rles_from_labels(labels)
