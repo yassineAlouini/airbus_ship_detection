@@ -14,7 +14,8 @@ rank 816/879 with 0.51638 on the final leaderboard.
 | Old: Mask R-CNN kernel | 0.51299 | 0.75707 |
 | **All images predicted empty** (calibration submission, 2026-09-27) | **0.52090** | **0.76566** |
 | Leaderboard reference: #1 / top-10% cutoff / median | 0.76444 / ~0.7305 / ~0.700 | |
-| **New solution (`modern/`)**, late submission 2026-09-27 | **0.73128** | **0.84920** |
+| New solution (`modern/`), stage 1 U-Net, late submission 2026-09-27 | 0.73128 | 0.84920 |
+| **New solution + ViT gate (stage 2)**, late submission 2026-09-28 | **0.73301** | **0.85040** |
 
 Both old submissions score **below the trivial "no ships anywhere" submission** on both splits. In other words, the old
 models added negative value. Five of the eight old submissions did not score at all (status `ERROR`).
@@ -112,9 +113,8 @@ It is a single script that trains, validates with the real metric, tunes the pos
 
 * **Leakage-aware CV.** Group tiles by reconstructed scene (tile overlap hashing) before splitting. The random split
   used here still makes validation optimistic in absolute terms. It remains usable for choosing thresholds.
-* **A dedicated classifier.** A separate classifier trained on all 192k images (for example ConvNeXt or
-  EfficientNetV2 at 384-768 px) usually beats an auxiliary head as the gate. Top 2018 teams used a
-  classifier-then-segmenter cascade.
+* **A dedicated classifier.** *Tried in stage 2 (section 5.2).* A DINOv2 ViT gate gave only +0.002, because the
+  auxiliary head was already close to the perfect-gate ceiling. Further gains have to come from the masks.
 * **Bigger ensembles.** Multiple folds or encoders, plus rotation TTA.
 * **Rotated-box priors.** Ships are almost always elongated rectangles. The winning 2018 team was called "Rectangle is
   all you need", and snapping masks to rotated rectangles is a cheap post-processing gain.
@@ -134,13 +134,19 @@ python build_kernel.py                                # optional KEY=VALUE env o
 kaggle kernels push -p kernel --accelerator NvidiaTeslaT4
 kaggle kernels output yassinealouini/airbus-ship-detection-modern-solution -p out/
 kaggle competitions submit -c airbus-ship-detection -f out/submission.csv -m "modern solution"
+
+# Stage 2: ViT gate on top of the stage-1 U-Net (kernel_sources mounts the stage-1 model.pt):
+python build_kernel.py --stage vit
+kaggle kernels push -p kernel_vit --accelerator NvidiaTeslaT4
 ```
 
 ## 5. Results
 
+### 5.1 Stage 1: U-Net with auxiliary gate head
+
 A single model, trained once, with no ensembling. Full run on a Kaggle T4 (kernel version 2, 2026-09-27).
 
-### Leaderboard (late submission)
+#### Leaderboard (late submission)
 
 | Submission | Public (ranked) | Private | Rank on the final leaderboard* |
 |---|---|---|---|
@@ -154,7 +160,7 @@ is not officially ranked. The bronze cutoff (top 10%) was rank 88 at 0.7306.
 
 The gain is **+0.215 on the ranked split** and +0.090 on the other split.
 
-### Training and validation
+#### Training and validation
 
 * 16 epochs (the `max_epochs` cap) in 7.0 h. Each epoch covered 42.5k ship images plus 42.5k freshly sampled empty
   images. Training loss went from 0.76 to 0.32 and was still slowly decreasing.
@@ -174,13 +180,71 @@ The gain is **+0.215 on the ranked split** and +0.090 on the other split.
 * Test predictions: 15,606 images and 17,896 rows. 17.8% of images have at least one ship, with 1.82 ships per such
   image on average. No instances overlap.
 
-### What the numbers say about next steps
+#### What the numbers said about next steps
 
-* **The gate is still the bottleneck.** The best gate threshold (0.95) sits on the edge of the grid, and gating adds
-  +0.015 on top of the ungated model. The auxiliary head is not confident enough on empty images. A dedicated
-  classifier (section 3, "Known limitations") and a finer threshold grid above 0.95 are the first things to try.
+* **The gate looked like the bottleneck, but it was not.** The best gate threshold (0.95) sat on the edge of the
+  grid, which suggested that a dedicated classifier would help. Stage 2 tested that and also measured the ceiling:
+  a *perfect* gate would score only 0.887 on validation, just +0.007 above this run (section 5.2).
 * **Training was cut by the epoch cap, not by the time budget** (7.0 h of the 8.5 h allowed), and the loss was still
   falling. Raising `ASD_MAX_EPOCHS` to about 19 fits the same kernel.
 * **Ship images score 0.49.** Instance quality at high IoU thresholds is where the top teams' remaining margin
   (0.731 → 0.764) comes from. The main levers are an ensemble of encoders, including a hierarchical transformer
   such as `mit_b2`, rotation TTA, and snapping masks to rotated rectangles.
+
+### 5.2 Stage 2: dedicated ViT gate (`modern/vit_gate.py`)
+
+**What it does.** A DINOv2 ViT-S/14 (registers variant, 22M parameters) is fine-tuned as a ship / no-ship classifier:
+* 518 px input, resized from 768 with `INTER_AREA`.
+* Trained on all 188.5k training images outside the segmenter's validation split, so the 4,000 validation images are
+  unseen by both models.
+* 8-way dihedral TTA at inference.
+
+The stage-1 U-Net is reused unchanged for the masks. The search then compares three gate sources: the U-Net's
+auxiliary head, the ViT, and their mean. It uses a finer threshold grid near 1.
+
+The ViT was deliberately kept out of the mask decoder. With 14 px patches, a whole small ship fits in one token, and
+the metric's IoU thresholds up to 0.95 punish coarse boundaries.
+
+**Run.** 9 epochs on a Kaggle T4, stopped by the 8 h budget (about 55 min per epoch of 104k images). Training loss went
+from 0.175 to 0.051.
+
+#### Validation
+
+Same 4,000 images as stage 1, exact metric:
+
+| Gate | AUC (ship vs empty image) | Best F2 |
+|---|---|---|
+| U-Net aux head (stage 1 grid, thr 0.95) | | 0.8797 |
+| U-Net aux head (finer grid, thr 0.97) | 0.99875 | 0.8801 |
+| ViT alone (thr 0.97) | 0.99833 | 0.8811 |
+| **Mean of aux head and ViT (thr 0.97)** | **0.99905** | **0.8817** |
+| *Perfect gate (oracle ceiling)* | *1.0* | *0.8872* |
+| No gate | | 0.8650 |
+
+#### Leaderboard (late submission)
+
+| Submission | Public (ranked) | Private | Rank* |
+|---|---|---|---|
+| Stage 1 | 0.73128 | 0.84920 | 81 / 879 |
+| **Stage 2 (mean of aux and ViT gates)** | **0.73301** | **0.85040** | **76 / 879 (top 8.6%)** |
+
+\* Where the score would rank on the final leaderboard. It is a late submission, so it is not officially ranked.
+
+The stage-2 submission marks 2,511 test images as containing ships, against 2,783 for stage 1. It drops 273
+images that stage 1 flagged and adds 1.
+
+#### Takeaways
+
+* **The ViT gate helps, but only a little:** +0.0020 on validation, +0.0017 public, +0.0012 private.
+* **The ViT is not a better classifier than the auxiliary head** (AUC 0.9983 vs 0.9987). The two make *different*
+  errors, and averaging them is what helps.
+* **Gating is essentially solved.** The oracle ceiling shows that at most +0.0055 remains from a better gate. Almost
+  all of the remaining error is on images with ships, which score 0.48 F2. So the next steps are about masks and
+  instances, not classification:
+  * a longer U-Net run (stage 1 stopped at the epoch cap while the loss was still falling);
+  * a second segmentation encoder for an ensemble, for example the hierarchical-transformer `mit_b2`, whose stride-4
+    stage keeps small ships;
+  * rotation TTA for the masks;
+  * snapping instances to rotated rectangles.
+* **Operational note:** the first version searched for `model.pt` with a depth-4 glob, which walked all 192k
+  competition images and cost about 16 min. The search now checks the known kernel-output locations only.

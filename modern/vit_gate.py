@@ -172,8 +172,9 @@ def predict_gate(model, image_dir, image_ids, cfg, device):
 
 
 def load_segmenter(cfg, device):
-    # Kernel outputs are mounted at a depth that has changed over time; avoid a recursive glob over the 192k images.
-    candidates = [p for depth in range(1, 5) for p in glob.glob("/kaggle/input/" + "*/" * depth + "model.pt")]
+    # Kernel outputs are mounted under /kaggle/input/notebooks/<user>/<slug>/ (older layout: /kaggle/input/<slug>/).
+    # Only look there: a generic depth-4 glob walks the 192k competition images and took ~16 min.
+    candidates = glob.glob("/kaggle/input/notebooks/*/*/model.pt") + glob.glob("/kaggle/input/*/model.pt")
     path = cfg["segmenter_path"] or next(iter(sorted(candidates)), "")
     if not path:
         raise FileNotFoundError("stage-1 model.pt not found; set ASD_SEGMENTER_PATH")
