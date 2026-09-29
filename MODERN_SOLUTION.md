@@ -16,6 +16,7 @@ rank 816/879 with 0.51638 on the final leaderboard.
 | Leaderboard reference: #1 / top-10% cutoff / median | 0.76444 / ~0.7305 / ~0.700 | |
 | New solution (`modern/`), stage 1 U-Net, late submission 2026-09-27 | 0.73128 | 0.84920 |
 | **New solution + ViT gate (stage 2)**, late submission 2026-09-28 | **0.73301** | **0.85040** |
+| Stage 3: 8-way TTA (no retraining), late submission 2026-09-29 | 0.73020 | 0.84906 |
 
 Both old submissions score **below the trivial "no ships anywhere" submission** on both splits. In other words, the old
 models added negative value. Five of the eight old submissions did not score at all (status `ERROR`).
@@ -116,8 +117,9 @@ It is a single script that trains, validates with the real metric, tunes the pos
 * **A dedicated classifier.** *Tried in stage 2 (section 5.2).* A DINOv2 ViT gate gave only +0.002, because the
   auxiliary head was already close to the perfect-gate ceiling. Further gains have to come from the masks.
 * **Bigger ensembles.** Multiple folds or encoders, plus rotation TTA.
-* **Rotated-box priors.** Ships are almost always elongated rectangles. The winning 2018 team was called "Rectangle is
-  all you need", and snapping masks to rotated rectangles is a cheap post-processing gain.
+* **Rotated-box priors.** *Tried in stage 3 (section 5.3).* Snapping predicted masks to rotated rectangles
+  *lowered* the score. The winning team's rectangle prior is more likely to help inside the model, for example as
+  box regression, than as post-processing.
 
 ## 4. Reproducing
 
@@ -138,6 +140,10 @@ kaggle competitions submit -c airbus-ship-detection -f out/submission.csv -m "mo
 # Stage 2: ViT gate on top of the stage-1 U-Net (kernel_sources mounts the stage-1 model.pt):
 python build_kernel.py --stage vit
 kaggle kernels push -p kernel_vit --accelerator NvidiaTeslaT4
+
+# Stage 3: diagnosis + post-processing search, locally with utilisation traces:
+ASD_DATA_DIR=../data ASD_OUT_DIR=../out_diag ASD_SEGMENTER_PATH=../weights/unet_v2.pt \
+ASD_VIT_GATE_PATH=../weights/vit_gate.pt ASD_WORKERS=12 ./trace_run.sh ../out_diag python diagnose.py
 ```
 
 ## 5. Results
@@ -248,3 +254,84 @@ images that stage 1 flagged and adds 1.
   * snapping instances to rotated rectangles.
 * **Operational note:** the first version searched for `model.pt` with a depth-4 glob, which walked all 192k
   competition images and cost about 16 min. The search now checks the known kernel-output locations only.
+
+### 5.3 Stage 3: error diagnosis and post-processing without retraining (`modern/diagnose.py`)
+
+This stage reuses the stage-1 U-Net and the stage-2 ViT gate unchanged, and runs on the same 4,000 validation
+images. It ran locally on an RTX 3090 because the Kaggle weekly GPU quota was used up.
+
+#### Where the remaining error comes from
+
+The breakdown uses the stage-2 configuration, on the 832 validation images that contain ships.
+
+**F2 by IoU threshold:**
+
+| IoU | 0.50 | 0.60 | 0.70 | 0.80 | 0.90 | 0.95 |
+|---|---|---|---|---|---|---|
+| F2 | 0.84 | 0.75 | 0.61 | 0.46 | 0.14 | 0.01 |
+
+**Detection by ship size:**
+
+| Ship area | Ships | Found (IoU > 0.5) | Good outline (IoU > 0.8) | Median IoU when found |
+|---|---|---|---|---|
+| < 50 px | 134 | 46% | 2% | 0.65 |
+| 50–150 px | 315 | 67% | 5% | 0.65 |
+| 150–500 px | 310 | 70% | 16% | 0.72 |
+| 500–2000 px | 450 | 90% | 53% | 0.83 |
+| > 2000 px | 336 | 97% | 88% | 0.89 |
+
+**Other error sources:**
+
+| Error | Rate |
+|---|---|
+| Merged ships | 8.6% of ships |
+| Split ships | 2.5% of ships |
+| Ship images wrongly filtered out by the gate | 63 of 832 (7.6%) |
+| Spurious detections | 0.26 per ship image |
+
+**Small ships are the bottleneck.** Ships under 150 px are 29% of all ships. Up to half of them are missed, and
+those that are found reach a median IoU of only 0.65, which fails most of the metric's thresholds. Large ships are
+already handled well.
+
+#### Post-processing experiments (no retraining)
+
+| Variant | Best validation F2 |
+|---|---|
+| Stage 2 (4 flips) | 0.8818 |
+| 8-way dihedral TTA | 0.8823 (+0.0005) |
+| Rotated-rectangle snapping (any size cutoff) | 0.8754–0.8772 (worse) |
+
+* **Snapping hurts at every size cutoff.** The predicted outlines are more accurate than their minimum-area
+  rectangles.
+* **8-way TTA was noise.** Its submission scored **0.73020 public / 0.84906 private**, *below* stage 2
+  (0.73301 / 0.85040). The +0.0005 on validation did not transfer, so stage 2 remains the best submission.
+
+**Conclusion:** post-processing is exhausted. The next gains require retraining aimed at small ships:
+* train at higher resolution (for example 1.5–2x upsampled crops) so a 50 px ship covers more than a handful of
+  feature-map cells;
+* oversample small-ship crops;
+* use a loss that weights small instances, instead of pixel BCE/Dice dominated by large ships;
+* use an encoder that keeps high-resolution detail.
+
+#### Engineering note: inference throughput
+
+The first version of `diagnose.py` post-processed each image on a single CPU core while the GPU waited.
+Validation took 21 min, and the whole run 45 min.
+
+The fixed version changes three things:
+* the GPU streams batches into a pool of 18 worker processes;
+* the inference batch size is 16;
+* the data loader uses pinned memory and prefetching.
+
+| Stage | Before | After | GPU busy (after) |
+|---|---|---|---|
+| Validation | 21 min | 4.7 min | 77% |
+| Whole run | 45 min | 26.3 min | |
+
+The ViT gate and test stages were already GPU-bound, at 94% GPU.
+
+With `ASD_INFER_BATCH=8`, the parallel version reproduces the sequential report exactly. At batch size 16, scores
+differ in the 5th decimal because fp16 kernels round differently at different batch sizes.
+
+`modern/trace_run.sh` records 1 s GPU and CPU utilisation traces for any run, and `diagnose.py` logs timestamped
+stages.

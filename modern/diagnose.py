@@ -13,8 +13,14 @@ The best configuration found by the exact competition metric is then used to wri
 """
 
 import json
+import multiprocessing as mp
+import os
+import time
+from collections import deque
+from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 
+import cv2
 import numpy as np
 import pandas as pd
 import torch
@@ -25,7 +31,12 @@ from airbus_modern import (CONFIG, TestDataset, _env, gate_sources, image_f2, la
                            split_ids)
 from vit_gate import VIT_CONFIG, ViTGate, find_kernel_output, load_segmenter, predict_gate
 
-DIAG_CONFIG = {"vit_gate_path": _env("ASD_VIT_GATE_PATH", "")}
+DIAG_CONFIG = {
+    "vit_gate_path": _env("ASD_VIT_GATE_PATH", ""),
+    "infer_batch": _env("ASD_INFER_BATCH", 16, int),
+    # CPU processes for post-processing; 0 = all cores minus the data-loader workers and 2 spare.
+    "postproc_workers": _env("ASD_POSTPROC_WORKERS", 0, int),
+}
 
 TTA_MODES = ["flip4", "dihedral8"]
 GATE_GRID = [0.9, 0.93, 0.95, 0.97, 0.98, 0.99]
@@ -38,21 +49,56 @@ SIZE_BINS = [0, 50, 150, 500, 2000, np.inf]
 IOU_THRESHOLDS = np.arange(0.5, 1.0, 0.05)
 
 
-def segmenter_probs(model, image_dir, image_ids, cfg, device):
+def segmenter_probs(model, image_dir, image_ids, cfg, device, modes=TTA_MODES):
     """Yield (image_id, {tta_mode: (body, border, aux_prob)}) from one set of 8 forward passes per image."""
     model.eval()
-    loader = DataLoader(TestDataset(image_dir, image_ids), batch_size=8, num_workers=cfg["workers"])
+    loader = DataLoader(TestDataset(image_dir, image_ids), batch_size=cfg["infer_batch"], num_workers=cfg["workers"],
+                        pin_memory=device.type == "cuda", persistent_workers=cfg["workers"] > 0,
+                        prefetch_factor=4 if cfg["workers"] > 0 else None)
     k = 0
     for x in loader:
-        x = x.to(device).to(memory_format=torch.channels_last)
+        x = x.to(device, non_blocking=True).to(memory_format=torch.channels_last)
         with torch.autocast(device.type, dtype=torch.float16, enabled=device.type == "cuda"):
             seg4, cls4, seg8, cls8 = predict_dihedral(model, x)
-        seg4, seg8 = seg4.half().cpu().numpy(), seg8.half().cpu().numpy()
-        cls4, cls8 = cls4.cpu().numpy(), cls8.cpu().numpy()
+        out = {"flip4": (seg4.half().cpu().numpy(), cls4.cpu().numpy()),
+               "dihedral8": (seg8.half().cpu().numpy(), cls8.cpu().numpy())}
         for i in range(len(x)):
-            yield image_ids[k], {"flip4": (seg4[i, 0], seg4[i, 1], float(cls4[i])),
-                                 "dihedral8": (seg8[i, 0], seg8[i, 1], float(cls8[i]))}
+            yield image_ids[k], {m: (out[m][0][i, 0], out[m][0][i, 1], float(out[m][1][i])) for m in modes}
             k += 1
+
+
+_T0 = time.time()
+
+
+def log(msg):
+    """Timestamped progress line, so stage durations can be read from the log."""
+    print(f"[{time.strftime('%H:%M:%S')} +{(time.time() - _T0) / 60:6.1f} min] {msg}", flush=True)
+
+
+def _init_worker():
+    # One thread per process: the parallelism comes from the process pool.
+    cv2.setNumThreads(1)
+    torch.set_num_threads(1)
+
+
+def make_pool(cfg):
+    n = cfg["postproc_workers"] or max(1, (os.cpu_count() or 4) - cfg["workers"] - 2)
+    # spawn: the parent holds a CUDA context, which must not be forked.
+    return ProcessPoolExecutor(n, mp_context=mp.get_context("spawn"), initializer=_init_worker), n
+
+
+def parallel_stream(pool, n_workers, fn, items):
+    """Apply ``fn(*item)`` in the pool while ``items`` keeps being produced (by the GPU); results in input order.
+
+    At most a few batches per worker are in flight, which bounds memory while keeping every core busy.
+    """
+    pending = deque()
+    for item in items:
+        pending.append(pool.submit(fn, *item))
+        if len(pending) >= 4 * n_workers:
+            yield pending.popleft().result()
+    while pending:
+        yield pending.popleft().result()
 
 
 def postprocess(body, border, mask_thr, min_area, snap):
@@ -121,6 +167,50 @@ def summarise(breakdowns, gated_out):
     }
 
 
+COMBOS = [(t, m, a, s) for t in TTA_MODES for m in MASK_GRID for a in AREA_GRID for s in SNAP_GRID]
+
+
+def score_valid_image(image_id, per_tta, rles, vit_prob):
+    """Score every (tta, mask, area, snap) combination on one validation image; runs in a worker process.
+
+    Returns (image_id, f2 row, is_empty, {tta: aux prob}, baseline breakdown or None, gated_out flag).
+    """
+    truth = labels_from_rles(rles)
+    is_empty = truth.max() == 0
+    row, cache, breakdown = np.zeros(len(COMBOS)), {}, None
+    for c, (t, m, a, s) in enumerate(COMBOS):
+        body, border, _ = per_tta[t]
+        if (t, m) not in cache:
+            cache[(t, m)] = segment_instances(body.astype(np.float32), border.astype(np.float32), m)
+        labels = remove_small(cache[(t, m)], a)
+        if labels.max() == 0:
+            row[c] = 1.0 if is_empty else 0.0
+            continue
+        labels = labels if s is None else snap_to_rectangles(labels, s)
+        row[c] = image_f2(truth, labels)
+        if (t, m, a, s) == config_key(BASELINE) and not is_empty:
+            breakdown = error_breakdown(truth, labels)
+    gated_out = False
+    if not is_empty:
+        sources = gate_sources(per_tta[BASELINE["tta"]][2], {"vit": vit_prob})
+        if sources[BASELINE["gate"]] < BASELINE["gate_thr"]:
+            gated_out, breakdown = True, None
+        elif breakdown is None:
+            # Passed the gate but no instance survived: every true ship is a false negative.
+            breakdown = error_breakdown(truth, np.zeros_like(truth))
+    return image_id, row, is_empty, {t: per_tta[t][2] for t in TTA_MODES}, breakdown, gated_out
+
+
+def submission_rows(image_id, body, border, aux_prob, vit_prob, best):
+    """Post-process one test image with the chosen configuration; runs in a worker process."""
+    labels = np.zeros(body.shape, np.int32)
+    if gate_sources(aux_prob, {"vit": vit_prob})[best["gate"]] >= best["gate_thr"]:
+        labels = postprocess(body.astype(np.float32), border.astype(np.float32), best["mask_thr"],
+                             best["min_area"], best["snap"])
+    rles = rles_from_labels(labels)
+    return [(image_id, r) for r in rles] if rles else [(image_id, "")]
+
+
 def config_key(c):
     return (c["tta"], c["mask_thr"], c["min_area"], c["snap"])
 
@@ -131,6 +221,7 @@ def main():
     Path(cfg["out_dir"]).mkdir(parents=True, exist_ok=True)
     print(json.dumps(cfg, indent=1), device, flush=True)
 
+    log("start")
     segmenter = load_segmenter(cfg, device)
     gate = ViTGate(cfg["vit_model"], 0, cfg["vit_img"]).to(device)
     gate.load_state_dict(torch.load(find_kernel_output("vit_gate.pt", cfg["vit_gate_path"]), map_location=device))
@@ -150,43 +241,27 @@ def main():
                   "split": ["valid"] * len(valid_vit) + ["test"] * len(test_vit),
                   "vit_prob": list(valid_vit.values()) + list(test_vit.values())}).to_csv(
         Path(cfg["out_dir"]) / "vit_gate_probs.csv", index=False)
-    print("gate probabilities done", flush=True)
+    log("gate probabilities done")
 
-    # --- validation: score every (tta, mask, area, snap) combination per image, gate applied afterwards ---
-    combos = [(t, m, a, s) for t in TTA_MODES for m in MASK_GRID for a in AREA_GRID for s in SNAP_GRID]
+    # --- validation: the GPU streams predictions while a process pool scores every combination per image ---
+    pool, n_workers = make_pool(cfg)
+    log(f"validation: post-processing with {n_workers} worker processes")
+    valid_items = ((image_id, per_tta, rles_by_id.get(image_id, []), valid_vit[image_id])
+                   for image_id, per_tta in segmenter_probs(segmenter, Path(cfg["data_dir"]) / "train_v2", valid,
+                                                            cfg, device))
     f2, aux, empty, baseline_breakdowns, baseline_gated_out = [], {t: [] for t in TTA_MODES}, [], [], 0
-    for image_id, per_tta in segmenter_probs(segmenter, Path(cfg["data_dir"]) / "train_v2", valid, cfg, device):
-        truth = labels_from_rles(rles_by_id.get(image_id, []))
-        is_empty = truth.max() == 0
-        row, cache = np.zeros(len(combos)), {}
-        for c, (t, m, a, s) in enumerate(combos):
-            body, border, _ = per_tta[t]
-            key = (t, m)
-            if key not in cache:
-                cache[key] = segment_instances(body.astype(np.float32), border.astype(np.float32), m)
-            labels = remove_small(cache[key], a)
-            if labels.max() == 0:
-                row[c] = 1.0 if is_empty else 0.0
-                continue
-            labels = labels if s is None else snap_to_rectangles(labels, s)
-            row[c] = image_f2(truth, labels)
-            if (t, m, a, s) == config_key(BASELINE) and not is_empty:
-                sources = gate_sources(per_tta[t][2], {"vit": valid_vit[image_id]})
-                if sources[BASELINE["gate"]] >= BASELINE["gate_thr"]:
-                    baseline_breakdowns.append(error_breakdown(truth, labels))
-        if not is_empty:
-            sources = gate_sources(per_tta["flip4"][2], {"vit": valid_vit[image_id]})
-            if sources[BASELINE["gate"]] < BASELINE["gate_thr"]:
-                baseline_gated_out += 1
-            elif remove_small(cache[("flip4", BASELINE["mask_thr"])], BASELINE["min_area"]).max() == 0:
-                # Passed the gate but no instance survived: every true ship is a false negative.
-                baseline_breakdowns.append(error_breakdown(truth, np.zeros_like(truth)))
+    for _, row, is_empty, aux_by_tta, breakdown, gated_out in parallel_stream(pool, n_workers, score_valid_image,
+                                                                              valid_items):
         f2.append(row)
         empty.append(1.0 if is_empty else 0.0)
         for t in TTA_MODES:
-            aux[t].append(per_tta[t][2])
+            aux[t].append(aux_by_tta[t])
+        baseline_gated_out += gated_out
+        if breakdown is not None:
+            baseline_breakdowns.append(breakdown)
     f2, empty = np.stack(f2), np.array(empty)
     vit = np.array([valid_vit[i] for i in valid])
+    combos = COMBOS
 
     results = []
     for t in TTA_MODES:
@@ -215,23 +290,20 @@ def main():
         "diagnostics_at_baseline": summarise(baseline_breakdowns, baseline_gated_out),
         "top_configs": results[:20],
     }
-    print("diagnosis:", json.dumps(report, indent=1, default=str), flush=True)
+    log("diagnosis: " + json.dumps(report, indent=1, default=str))
     (Path(cfg["out_dir"]) / "diagnosis_report.json").write_text(json.dumps(report, indent=1, default=str))
 
     # --- test: write the submission with the best configuration ---
-    rows = []
-    for image_id, per_tta in segmenter_probs(segmenter, test_dir, test_ids, cfg, device):
-        body, border, aux_prob = per_tta[best["tta"]]
-        labels = np.zeros(body.shape, np.int32)
-        if gate_sources(aux_prob, {"vit": test_vit[image_id]})[best["gate"]] >= best["gate_thr"]:
-            labels = postprocess(body.astype(np.float32), border.astype(np.float32), best["mask_thr"],
-                                 best["min_area"], best["snap"])
-        rles = rles_from_labels(labels)
-        rows += [(image_id, r) for r in rles] if rles else [(image_id, "")]
+    log("test: inference + post-processing")
+    test_items = ((image_id, *per_tta[best["tta"]], test_vit[image_id], best)
+                  for image_id, per_tta in segmenter_probs(segmenter, test_dir, test_ids, cfg, device,
+                                                           modes=[best["tta"]]))
+    rows = [r for image_rows in parallel_stream(pool, n_workers, submission_rows, test_items) for r in image_rows]
+    pool.shutdown()
     sub = pd.DataFrame(rows, columns=["ImageId", "EncodedPixels"])
     sub.to_csv(Path(cfg["out_dir"]) / "submission.csv", index=False)
     n_ship = sub.groupby("ImageId").EncodedPixels.apply(lambda s: (s != "").any()).mean()
-    print(f"submission: {sub.ImageId.nunique()} images, {len(sub)} rows, {n_ship:.3f} with ships", flush=True)
+    log(f"submission: {sub.ImageId.nunique()} images, {len(sub)} rows, {n_ship:.3f} with ships")
 
 
 if __name__ == "__main__":

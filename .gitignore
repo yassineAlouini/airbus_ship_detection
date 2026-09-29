@@ -7,3 +7,6 @@ modern/kernel/airbus_modern_kernel.py
 modern/kernel_vit/vit_gate_kernel.py
 modern/kernel_diag/diagnose_kernel.py
 weights
+out_diag
+runs
+out_diag_parallel
