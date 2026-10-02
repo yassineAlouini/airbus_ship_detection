@@ -17,6 +17,8 @@ rank 816/879 with 0.51638 on the final leaderboard.
 | New solution (`modern/`), stage 1 U-Net, late submission 2026-09-27 | 0.73128 | 0.84920 |
 | **New solution + ViT gate (stage 2)**, late submission 2026-09-28 | **0.73301** | **0.85040** |
 | Stage 3: 8-way TTA (no retraining), late submission 2026-09-29 | 0.73020 | 0.84906 |
+| Stage 4: small-ship fine-tune, gate 0.90 (2026-10-02) | 0.72113 | 0.84896 |
+| Stage 4 model with the stage-2 gate 0.97 (ablation, 2026-10-02) | 0.73039 | 0.84830 |
 
 Both old submissions score **below the trivial "no ships anywhere" submission** on both splits. In other words, the old
 models added negative value. Five of the eight old submissions did not score at all (status `ERROR`).
@@ -335,3 +337,48 @@ differ in the 5th decimal because fp16 kernels round differently at different ba
 
 `modern/trace_run.sh` records 1 s GPU and CPU utilisation traces for any run, and `diagnose.py` logs timestamped
 stages.
+
+### 5.4 Stage 4: fine-tuning for small ships (`modern/small_ships.py`)
+
+This stage fine-tuned the stage-1 U-Net for 30 epochs (3 h on the local RTX 3090) with:
+* multi-scale crops (1x / 1.5x / 2x zoom);
+* crops centred on ships drawn with probability ~ 1/sqrt(area);
+* a size-weighted body BCE (weights up to 5x for small ships).
+
+It was tracked with Trackio through `kaggle-tools`:
+* `track_run.py` logs the training curves and the GPU/CPU utilisation;
+* `eval_checkpoints.py` logs, for every epoch, the validation loss, F2 and small-ship recall on 1,000 held-out
+  images.
+
+#### Validation (4,000 images, exact metric)
+
+| Variant | Best F2 |
+|---|---|
+| Original model | 0.88172 |
+| **Fine-tuned, 1x input** | **0.88660 (+0.0049)** |
+| Fine-tuned, 1.5x input | 0.88287 |
+| Fine-tuned, 2x input | 0.87515 |
+| Fine-tuned, averaged over scales | 0.88538 |
+| Original + fine-tuned | 0.88653 |
+
+Upscaling the input at inference did not help. The validation gain came from training at 1x.
+
+#### Leaderboard
+
+| Submission | Model | Gate | Public | Private |
+|---|---|---|---|---|
+| Stage 2 | original | mean(aux, ViT) >= 0.97 | **0.73301** | **0.85040** |
+| Stage 4 | fine-tuned | mean(aux, ViT) >= 0.90 (picked on validation) | 0.72113 | 0.84896 |
+| Ablation | fine-tuned | mean(aux, ViT) >= 0.97 | 0.73039 | 0.84830 |
+
+**Validation does not transfer.**
+* **The looser gate picked on validation caused most of the public drop.** Restoring 0.97 recovers +0.0093.
+* **The fine-tuned model is still slightly worse than the original on the test set** (-0.0026 public, -0.0021
+  private) at the same gate, despite +0.0049 on validation.
+* **This is the second validation gain that did not transfer**, after stage 3's TTA. Both point to the same cause:
+  the random image-level split puts overlapping tiles of the same scenes in train and validation (section 2.7). So
+  validation rewards models and thresholds tuned to scenes already seen in training.
+
+**Next step:** a leakage-aware split. Detect overlapping tiles, group them into scenes, and hold out whole scenes.
+Further retraining is not worth doing until validation tracks the leaderboard. `modern/predict_test.py` writes a
+test submission for any checkpoint and gate setting, for ablations like the one above.
