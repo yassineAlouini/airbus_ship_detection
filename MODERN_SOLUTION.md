@@ -382,3 +382,44 @@ Upscaling the input at inference did not help. The validation gain came from tra
 **Next step:** a leakage-aware split. Detect overlapping tiles, group them into scenes, and hold out whole scenes.
 Further retraining is not worth doing until validation tracks the leaderboard. `modern/predict_test.py` writes a
 test submission for any checkpoint and gate setting, for ablations like the one above.
+
+### 5.5 Is it scene leakage? (`modern/scene_leakage.py`)
+
+The 768 px tiles are crops of larger scenes at 256 px aligned offsets, so overlapping tiles share bit-identical
+256x256 blocks. The script works in four steps:
+1. Hash every textured block (pixel std >= 8, seen in <= 20 images) of all 208k train and test images.
+2. Group linked images into scenes with union-find (4.4 min on 30 cores).
+3. Mark a validation image as leaky if its scene contains a training image.
+4. Re-score the five variants that have leaderboard scores.
+
+**Leakage found:**
+* **Validation:** 487 of 4,000 images (12%) share a scene with training images; 3,513 are clean.
+* **Test:** 0 of 15,606 images touch a training scene. The test set is entirely new scenes.
+
+**Results:**
+
+| Variant | All val | Clean val | Leaky val | Public | Private |
+|---|---|---|---|---|---|
+| Stage 1 | 0.8797 | 0.9002 | 0.7320 | 0.73128 | 0.84920 |
+| **Stage 2** | 0.8818 | 0.9025 | 0.7320 | **0.73301** | **0.85040** |
+| Stage 3 | 0.8823 | 0.9029 | 0.7333 | 0.73020 | 0.84906 |
+| Stage 4 | **0.8865** | **0.9057** | **0.7486** | 0.72113 | 0.84896 |
+| Stage-4 model, gate 0.97 | 0.8860 | 0.9053 | 0.7472 | 0.73039 | 0.84830 |
+
+* **Removing the leaky images does not fix the ranking.** The Spearman correlation between validation F2 and the
+  leaderboard is -0.8 both on all validation images and on the clean subset.
+* **On clean validation, the stage-4 model beats stage 2 at the same gate** by +0.0028 (paired bootstrap 95% CI
+  [+0.0009, +0.0045]). On the leaderboard it loses by 0.0026 (public) and 0.0021 (private).
+* **So tile-overlap leakage is not the explanation; a domain shift is.** Even the "clean" validation images come
+  from the same acquisitions and regions as training, while the test set is entirely new scenes. Fine-tuning longer
+  specialised the model to the training distribution.
+* **Caveat:** the detector only catches exact 256 px-aligned overlaps (12.6% of training images were linked to
+  another tile), so some overlaps may be missed. But the ranking did not move at all on the clean subset.
+
+**Implications:**
+* No validation split drawn from the training scenes predicts the leaderboard for this data.
+* Model choices need validation that holds out whole regions or acquisitions. With no location metadata, a proxy is
+  to cluster images by appearance and hold out whole clusters. Otherwise, the leaderboard has to be used sparingly
+  as the judge.
+* Stage 2 (0.73301 / 0.85040) remains the best submission. `out_scene/scenes.csv` (scene id per image) is
+  available for grouped splits.
