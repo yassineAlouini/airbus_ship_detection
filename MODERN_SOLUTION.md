@@ -19,6 +19,7 @@ rank 816/879 with 0.51638 on the final leaderboard.
 | Stage 3: 8-way TTA (no retraining), late submission 2026-09-29 | 0.73020 | 0.84906 |
 | Stage 4: small-ship fine-tune, gate 0.90 (2026-10-02) | 0.72113 | 0.84896 |
 | Stage 4 model with the stage-2 gate 0.97 (ablation, 2026-10-02) | 0.73039 | 0.84830 |
+| **Ensemble: stage-2 U-Net + stage-4 U-Net, gate 0.97 (2026-10-03)** | **0.73574** | 0.85000 |
 
 Both old submissions score **below the trivial "no ships anywhere" submission** on both splits. In other words, the old
 models added negative value. Five of the eight old submissions did not score at all (status `ERROR`).
@@ -423,3 +424,22 @@ The 768 px tiles are crops of larger scenes at 256 px aligned offsets, so overla
   as the judge.
 * Stage 2 (0.73301 / 0.85040) remains the best submission. `out_scene/scenes.csv` (scene id per image) is
   available for grouped splits.
+
+### 5.6 Ensemble of the original and fine-tuned U-Nets
+
+The two U-Nets' masks and auxiliary gate probabilities were averaged at 1x with flip-4 TTA, using the stage-2 gate
+(mean(aux, ViT) >= 0.97, mask 0.5, minimum area 20 px), via `modern/predict_test.py --weights A B`.
+
+| Submission | Public | Private | Rank on the final leaderboard* |
+|---|---|---|---|
+| Stage 2 (original U-Net) | 0.73301 | **0.85040** | 76 / 879 |
+| Stage-4 U-Net alone, same gate | 0.73039 | 0.84830 | |
+| **Ensemble of both** | **0.73574** | 0.85000 | **59 / 879 (top 6.7%)** |
+
+\* Where the score would rank on the final leaderboard. It is a late submission, so it is not officially ranked.
+
+**Takeaways:**
+* The fine-tuned model is worse than the original alone on the test set, but it helps in an ensemble: the two make
+  different errors.
+* On the ranked (public) column the ensemble is the new best. On private it is level with stage 2 (-0.0004).
+* The ensemble is the teacher for stage 5 (pseudo-labelling the test scenes).

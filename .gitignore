@@ -13,3 +13,5 @@ out_diag_parallel
 out_small
 out_small_gate97
 out_scene
+out_ens
+out_pseudo
