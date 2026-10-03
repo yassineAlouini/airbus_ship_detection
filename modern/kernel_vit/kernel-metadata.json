@@ -1,0 +1,13 @@
+{
+  "id": "yassinealouini/airbus-ship-detection-vit-gate",
+  "title": "Airbus Ship Detection - ViT Gate",
+  "code_file": "vit_gate_kernel.py",
+  "language": "python",
+  "kernel_type": "script",
+  "is_private": true,
+  "enable_gpu": true,
+  "enable_internet": true,
+  "dataset_sources": [],
+  "competition_sources": ["airbus-ship-detection"],
+  "kernel_sources": ["yassinealouini/airbus-ship-detection-modern-solution"]
+}

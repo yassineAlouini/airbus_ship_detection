@@ -1,3 +1,6 @@
+> **2026 update:** see [MODERN_SOLUTION.md](MODERN_SOLUTION.md) for a post-mortem of this 2018 attempt and a modern
+> PyTorch solution in [`modern/`](modern/).
+
 # Downloading the data
 
 First, you should accept the competition conditions. Then, after installing  the Kaggle CLI, create a `data` folder
@@ -8,7 +11,7 @@ under `asd` and run the following command inside it:
 
 # Unzipping the data
 
-`unzip airbus_ship_detection/asd/data/test_v2.zip -d airbus_ship_detection/asd/data/train_v2`
+`unzip airbus_ship_detection/asd/data/train_v2.zip -d airbus_ship_detection/asd/data/train_v2`
 `unzip airbus_ship_detection/asd/data/test_v2.zip -d airbus_ship_detection/asd/data/test_v2`
 
 
