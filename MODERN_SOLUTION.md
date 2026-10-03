@@ -20,6 +20,8 @@ rank 816/879 with 0.51638 on the final leaderboard.
 | Stage 4: small-ship fine-tune, gate 0.90 (2026-10-02) | 0.72113 | 0.84896 |
 | Stage 4 model with the stage-2 gate 0.97 (ablation, 2026-10-02) | 0.73039 | 0.84830 |
 | **Ensemble: stage-2 U-Net + stage-4 U-Net, gate 0.97 (2026-10-03)** | **0.73574** | 0.85000 |
+| Stage 5: pseudo-label student alone (2026-10-03) | 0.72514 | 0.84898 |
+| Stage 5: 3-model ensemble (stage 2 + stage 4 + student) (2026-10-03) | 0.73535 | 0.85038 |
 
 Both old submissions score **below the trivial "no ships anywhere" submission** on both splits. In other words, the old
 models added negative value. Five of the eight old submissions did not score at all (status `ERROR`).
@@ -443,3 +445,49 @@ The two U-Nets' masks and auxiliary gate probabilities were averaged at 1x with 
   different errors.
 * On the ranked (public) column the ensemble is the new best. On private it is level with stage 2 (-0.0004).
 * The ensemble is the teacher for stage 5 (pseudo-labelling the test scenes).
+
+### 5.7 Stage 5: pseudo-labelling the test scenes (`modern/pseudo_label.py`)
+
+**Method:**
+* **Teacher:** the section-5.6 ensemble, which labelled the 15,606 test images:
+  * 11,370 confidently empty (gate < 0.05 and max ship probability < 0.3);
+  * 2,499 with ships (gate >= 0.97; pixels with probability in 0.3-0.7 masked out of the loss);
+  * 1,737 skipped.
+* **Student:** initialised from the stage-2 U-Net and fine-tuned for 2 h (32 epochs on the RTX 3090) on 75% real
+  training images and 25% pseudo-labelled test images. Training curves are in Trackio (run `stage5-pseudo-label`).
+
+**Leaderboard:**
+
+| Submission | Public | Private |
+|---|---|---|
+| **Ensemble of stage 2 + stage 4 (section 5.6)** | **0.73574** | 0.85000 |
+| Student alone | 0.72514 | 0.84898 |
+| Stage 2 + stage 4 + student | 0.73535 | 0.85038 |
+
+**Takeaways:**
+* **The student alone is worse than its stage-2 initialisation** (-0.008 public). It repeats the stage-4 pattern:
+  more training on the training scenes hurts on the unseen test scenes, and a 25% share of pseudo-labels did not
+  offset it.
+* **Adding the student to the ensemble is neutral within noise:** -0.0004 public, +0.0004 private.
+* **Overall pattern across stages 3-5.** Every change judged by validation drawn from the training scenes failed to
+  transfer. The only reliable leaderboard gains came from:
+  * a dedicated gate (stage 2);
+  * averaging models that make different errors (section 5.6).
+
+## 6. Final standing
+
+| | Public (ranked) | Private | Rank on the final leaderboard* |
+|---|---|---|---|
+| 2018 attempt (old best) | 0.51638 | 0.75929 | 812 / 879 |
+| All empty | 0.52090 | 0.76566 | 759 / 879 |
+| **Best: ensemble of stage 2 + stage 4** | **0.73574** | 0.85000 | **59 / 879 (top 6.7%)** |
+| Best private: stage 2 | 0.73301 | 0.85040 | 76 / 879 |
+| #1 in 2018 | 0.76444 | | 1 |
+
+\* Where the score would rank on the final leaderboard. These are late submissions, so they are not officially
+ranked.
+
+Closing the remaining gap to #1 (+0.029) would probably take several things together:
+* a validation scheme that holds out whole regions;
+* larger and more diverse ensembles (different encoders and seeds);
+* the top teams' instance-level tricks, such as rotated-box detection heads.
