@@ -19,7 +19,6 @@ from pathlib import Path
 
 import pandas as pd
 import trackio
-
 from kaggle_tools.tracking import trackio_run
 
 STEP_RE = re.compile(r"epoch (\d+) step (\d+) loss ([\d.]+) lr ([\d.e+-]+) progress ([\d.]+)")

@@ -31,9 +31,24 @@ import torch
 import torch.nn.functional as F
 from torch.utils.data import DataLoader, Dataset
 
-from airbus_modern import (CONFIG, IMG_SHAPE, ShipNet, TestDataset, _env, border_from_labels, gate_sources,
-                           image_f2, labels_from_rles, load_masks, predict_tta, remove_small, rles_from_labels,
-                           segment_instances, soft_dice_loss, split_ids)
+from airbus_modern import (
+    CONFIG,
+    IMG_SHAPE,
+    ShipNet,
+    TestDataset,
+    _env,
+    border_from_labels,
+    gate_sources,
+    image_f2,
+    labels_from_rles,
+    load_masks,
+    predict_tta,
+    remove_small,
+    rles_from_labels,
+    segment_instances,
+    soft_dice_loss,
+    split_ids,
+)
 from diagnose import error_breakdown, log, make_pool, parallel_stream, summarise
 
 SMALL_CONFIG = {

@@ -1,5 +1,20 @@
-> **2026 update:** see [MODERN_SOLUTION.md](MODERN_SOLUTION.md) for a post-mortem of this 2018 attempt and a modern
-> PyTorch solution in [`modern/`](modern/).
+> **2026 update:** [MODERN_SOLUTION.md](MODERN_SOLUTION.md) explains why this 2018 attempt scored below an all-empty
+> submission, and documents a modern PyTorch solution in [`modern/`](modern/). Its best late submission scores
+> **0.73574 public / 0.85000 private** (it would rank 59 / 879), against 0.51638 / 0.75929 for the 2018 code below.
+>
+> | `modern/` script | Role |
+> |---|---|
+> | `airbus_modern.py` | Stage 1: U-Net (EfficientNetV2-S) with a ship/no-ship head and a border channel, F2-tuned post-processing |
+> | `vit_gate.py` | Stage 2: dedicated DINOv2 ViT ship/no-ship gate |
+> | `diagnose.py` | Stage 3: error breakdown by ship size and IoU threshold, TTA and rectangle-snapping search |
+> | `small_ships.py` | Stage 4: small-ship fine-tune (multi-scale crops, size-weighted loss) |
+> | `scene_leakage.py` | Train / validation / test scene-overlap analysis |
+> | `pseudo_label.py` | Stage 5: pseudo-labelling of the test scenes |
+> | `predict_test.py` | Submission from one checkpoint, or an average of several (the best submission averages stages 2 and 4) |
+> | `build_kernel.py`, `kernel*/` | Single-file Kaggle kernels for stages 1-3 |
+> | `trace_run.sh`, `track_run.py`, `eval_checkpoints.py`, `plot_run.py` | Utilisation traces and Trackio tracking |
+>
+> The 2018 code in `asd/` is kept unchanged for reference.
 
 # Downloading the data
 

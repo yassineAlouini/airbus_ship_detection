@@ -27,8 +27,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.utils.data import DataLoader, Dataset
 
-from airbus_modern import (CONFIG, MEAN, STD, ShipNet, _env, load_masks, split_ids, tune_postprocessing,
-                           write_submission)
+from airbus_modern import CONFIG, MEAN, STD, ShipNet, _env, load_masks, split_ids, tune_postprocessing, write_submission
 
 VIT_CONFIG = {
     "vit_model": _env("ASD_VIT_MODEL", "vit_small_patch14_reg4_dinov2.lvd142m"),

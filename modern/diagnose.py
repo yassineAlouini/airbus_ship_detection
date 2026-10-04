@@ -26,9 +26,21 @@ import pandas as pd
 import torch
 from torch.utils.data import DataLoader
 
-from airbus_modern import (CONFIG, TestDataset, _env, gate_sources, image_f2, labels_from_rles, load_masks,
-                           predict_dihedral, remove_small, rles_from_labels, segment_instances, snap_to_rectangles,
-                           split_ids)
+from airbus_modern import (
+    CONFIG,
+    TestDataset,
+    _env,
+    gate_sources,
+    image_f2,
+    labels_from_rles,
+    load_masks,
+    predict_dihedral,
+    remove_small,
+    rles_from_labels,
+    segment_instances,
+    snap_to_rectangles,
+    split_ids,
+)
 from vit_gate import VIT_CONFIG, ViTGate, find_kernel_output, load_segmenter, predict_gate
 
 DIAG_CONFIG = {

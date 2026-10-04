@@ -1,4 +1,4 @@
-"""Write a test submission for one U-Net checkpoint with explicit post-processing settings.
+"""Write a test submission for one U-Net checkpoint, or an average of several, with explicit post-processing.
 
 Useful for ablations, e.g. a new model with an old gate threshold, without re-running training or validation.
 

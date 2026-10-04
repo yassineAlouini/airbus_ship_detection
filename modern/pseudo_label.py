@@ -29,9 +29,21 @@ import torch
 import torch.nn.functional as F
 from torch.utils.data import DataLoader, Dataset
 
-from airbus_modern import (CONFIG, IMG_SHAPE, ShipNet, border_from_labels, gate_sources, labels_from_rles,
-                           load_masks, remove_small, rle_decode, rle_encode, rles_from_labels, segment_instances,
-                           split_ids)
+from airbus_modern import (
+    CONFIG,
+    IMG_SHAPE,
+    ShipNet,
+    border_from_labels,
+    gate_sources,
+    labels_from_rles,
+    load_masks,
+    remove_small,
+    rle_decode,
+    rle_encode,
+    rles_from_labels,
+    segment_instances,
+    split_ids,
+)
 from diagnose import log, make_pool, parallel_stream
 from small_ships import MODES, SMALL_CONFIG, mode_probs
 
@@ -140,7 +152,6 @@ def masked_loss(seg, cls, y, has_ship, weight):
 
 def train_student(cfg, device, pseudo, init_path, hours, out_dir):
     import trackio
-
     from kaggle_tools.tracking import trackio_run
 
     ids, rles_by_id = load_masks(cfg["data_dir"], 0)

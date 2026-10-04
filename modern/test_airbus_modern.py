@@ -1,8 +1,17 @@
 import numpy as np
 import pytest
 
-from airbus_modern import (border_from_labels, gate_sources, image_f2, instances_from_probs, labels_from_rles,
-                           rle_decode, rle_encode, rles_from_labels, snap_to_rectangles)
+from airbus_modern import (
+    border_from_labels,
+    gate_sources,
+    image_f2,
+    instances_from_probs,
+    labels_from_rles,
+    rle_decode,
+    rle_encode,
+    rles_from_labels,
+    snap_to_rectangles,
+)
 
 
 def _box(labels, k, y0, y1, x0, x1):

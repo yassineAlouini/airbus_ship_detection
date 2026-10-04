@@ -29,8 +29,19 @@ import pandas as pd
 import torch
 from torch.utils.data import DataLoader
 
-from airbus_modern import (CONFIG, ShipNet, TestDataset, gate_sources, image_f2, labels_from_rles, load_masks,
-                           predict_dihedral, remove_small, segment_instances, split_ids)
+from airbus_modern import (
+    CONFIG,
+    ShipNet,
+    TestDataset,
+    gate_sources,
+    image_f2,
+    labels_from_rles,
+    load_masks,
+    predict_dihedral,
+    remove_small,
+    segment_instances,
+    split_ids,
+)
 from diagnose import log, make_pool, parallel_stream
 
 BLOCK, MIN_STD, MAX_OWNERS = 256, 8.0, 20

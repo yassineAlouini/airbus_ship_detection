@@ -23,13 +23,23 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 import torch
+import trackio
+from kaggle_tools.tracking import trackio_run
 from torch.utils.data import DataLoader, Dataset
 
-import trackio
-from airbus_modern import (CONFIG, ShipNet, border_from_labels, gate_sources, image_f2, labels_from_rles, load_masks,
-                           remove_small, segment_instances, split_ids)
+from airbus_modern import (
+    CONFIG,
+    ShipNet,
+    border_from_labels,
+    gate_sources,
+    image_f2,
+    labels_from_rles,
+    load_masks,
+    remove_small,
+    segment_instances,
+    split_ids,
+)
 from diagnose import error_breakdown, make_pool, parallel_stream
-from kaggle_tools.tracking import trackio_run
 from small_ships import WEIGHT_A0, WEIGHT_MAX, small_ship_loss
 
 EPOCH_RE = re.compile(r"epoch (\d+) done")
