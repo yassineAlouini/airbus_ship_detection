@@ -1,0 +1,13 @@
+{
+  "id": "yassinealouini/airbus-ship-detection-modern-solution",
+  "title": "Airbus Ship Detection - Modern Solution",
+  "code_file": "airbus_modern_kernel.py",
+  "language": "python",
+  "kernel_type": "script",
+  "is_private": true,
+  "enable_gpu": true,
+  "enable_internet": true,
+  "dataset_sources": [],
+  "competition_sources": ["airbus-ship-detection"],
+  "kernel_sources": []
+}
